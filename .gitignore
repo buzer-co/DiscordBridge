@@ -1,0 +1,6 @@
+/dist/
+/test-results/
+*.exe
+*.log
+*.test
+__pycache__/
