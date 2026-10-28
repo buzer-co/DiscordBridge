@@ -48,9 +48,15 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 		a.enqueue(event{trafficSample: true, trafficRX: float64(i), trafficTX: float64(i) / 3})
 	}
 	a.update()
+	var client rect
+	call(procGetClientRect, a.hwnd, uintptr(unsafe.Pointer(&client)))
+	if client.right != a.px(1080) || client.bottom != a.px(710) {
+		t.Fatalf("client clipped: %v at scale %f", client, a.scale)
+	}
+	expected := a.scaledRect(networkRect)
 	var dirty rect
-	if call(testGetUpdateRect, a.hwnd, uintptr(unsafe.Pointer(&dirty)), 0) == 0 || dirty != networkRect {
-		t.Fatalf("traffic invalidated %v; expected only %v", dirty, networkRect)
+	if call(testGetUpdateRect, a.hwnd, uintptr(unsafe.Pointer(&dirty)), 0) == 0 || dirty != expected {
+		t.Fatalf("traffic invalidated %v; expected only %v", dirty, expected)
 	}
 	for id, h := range a.buttons {
 		if call(testGetUpdateRect, h, uintptr(unsafe.Pointer(&dirty)), 0) != 0 {
@@ -107,16 +113,18 @@ func saveNativeScreenshot(t *testing.T, ap *app) {
 	if os.Getenv("CI") == "" {
 		return
 	}
-	const w, h = 1080, 710
+	var client rect
+	call(procGetClientRect, ap.hwnd, uintptr(unsafe.Pointer(&client)))
+	w, h := int(client.right), int(client.bottom)
 	dc := call(testGetDC, ap.hwnd)
 	if dc == 0 {
 		t.Fatal("GetDC failed")
 	}
 	defer call(testReleaseDC, ap.hwnd, dc)
 	mem := call(procCreateCompatibleDC, dc)
-	bmp := call(procCreateCompatibleBitmap, dc, w, h)
+	bmp := call(procCreateCompatibleBitmap, dc, uintptr(w), uintptr(h))
 	old := call(procSelectObject, mem, bmp)
-	call(procBitBlt, mem, 0, 0, w, h, dc, 0, 0, 0x00CC0020)
+	call(procBitBlt, mem, 0, 0, uintptr(w), uintptr(h), dc, 0, 0, 0x00CC0020)
 	call(procSelectObject, mem, old)
 	defer call(procDeleteObject, bmp)
 	defer call(procDeleteDC, mem)
@@ -127,9 +135,9 @@ func saveNativeScreenshot(t *testing.T, ap *app) {
 		compression, sizeImage uint32
 		x, y                   int32
 		used, important        uint32
-	}{size: 40, width: w, height: -h, planes: 1, bits: 32}
+	}{size: 40, width: int32(w), height: -int32(h), planes: 1, bits: 32}
 	pixels := make([]byte, w*h*4)
-	if call(testGetDIBits, dc, bmp, 0, h, uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0) != h {
+	if call(testGetDIBits, dc, bmp, 0, uintptr(h), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), 0) != uintptr(h) {
 		t.Fatal("GetDIBits failed")
 	}
 	im := image.NewRGBA(image.Rect(0, 0, w, h))

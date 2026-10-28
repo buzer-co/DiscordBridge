@@ -19,6 +19,7 @@ X düğmesi programı sistem tepsisine gizler. Çıkmak için tepsi menüsünü 
 - Ana pencere, düğmelerin üstünü boyamaz. Ana düğmenin yazısı/rengi yalnızca gerçekten değiştiğinde güncellenir.
 - Ağ ölçümü için düzenli PowerShell işlemi başlatılmaz. Windows IP Helper API'nin 64 bit fiziksel adaptör sayaçları kullanılır.
 - Ağ geçmişi 60 örnekle sınırlıdır; adaptör sıfırlanması veya değişmesi yanlış trafik sıçraması üretmez.
+- Küçük çözünürlüklü ekranlarda pencere ve kontroller ekran alanına sığacak şekilde birlikte ölçeklenir.
 - Daha kompakt Discord tarzı düzen; yuvarlak seçimler, yumuşak butonlar ve küçük alt ağ grafiği.
 - İşlem sırasında profil/dil değişimi kapatılır. Aynı profilin tekrar seçilmesi gereksiz kayıt ve çizim başlatmaz.
 - Arka plan PowerShell işlemlerine 30 saniye sınırı eklendi. Pencere kapanırken grafik tamponu ve GDI kaynakları bırakılır.

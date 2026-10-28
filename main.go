@@ -174,6 +174,10 @@ var (
 	procCreateCompatibleDC        = gdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap    = gdi32.NewProc("CreateCompatibleBitmap")
 	procDeleteDC                  = gdi32.NewProc("DeleteDC")
+	procStretchBlt                = gdi32.NewProc("StretchBlt")
+	procSetStretchBltMode         = gdi32.NewProc("SetStretchBltMode")
+	procSetBrushOrg               = gdi32.NewProc("SetBrushOrgEx")
+	procSystemParametersInfo      = user32.NewProc("SystemParametersInfoW")
 	procIsWindowVisible           = user32.NewProc("IsWindowVisible")
 	procAdjustWindowRect          = user32.NewProc("AdjustWindowRectEx")
 	procIsDialogMessage           = user32.NewProc("IsDialogMessageW")
@@ -320,6 +324,8 @@ type dnsBackup struct {
 }
 
 type app struct {
+	scale        float64
+	controlRects map[int]rect
 	uiState
 	hwnd, pathEdit, logEdit                             uintptr
 	buttons                                             map[int]uintptr
@@ -574,9 +580,13 @@ func softCircle(hdc uintptr, x, y, diameter int32, clr uint32, alpha uint8) {
 }
 
 func createControl(class, text string, style uint32, x, y, w, h int32, id int) uintptr {
-	return call(procCreateWindow, 0, uintptr(unsafe.Pointer(ptr(class))), uintptr(unsafe.Pointer(ptr(text))), uintptr(style|wsChild|wsVisible), uintptr(x), uintptr(y), uintptr(w), uintptr(h), a.hwnd, uintptr(id), 0, 0)
+	return call(procCreateWindow, 0, uintptr(unsafe.Pointer(ptr(class))), uintptr(unsafe.Pointer(ptr(text))), uintptr(style|wsChild|wsVisible), uintptr(a.px(x)), uintptr(a.px(y)), uintptr(a.px(x+w)-a.px(x)), uintptr(a.px(y+h)-a.px(y)), a.hwnd, uintptr(id), 0, 0)
 }
 func (ap *app) button(id int, title string, x, y, w, h int32, clr, fg uint32) {
+	if ap.controlRects == nil {
+		ap.controlRects = make(map[int]rect)
+	}
+	ap.controlRects[id] = rect{0, 0, w, h}
 	handle := createControl("BUTTON", title, bsOwnerDraw|wsTabstop, x, y, w, h, id)
 	ap.buttons[id] = handle
 	ap.styles[uint32(id)] = style{title, clr, fg}
@@ -632,8 +642,10 @@ func (ap *app) invalidate(r *rect) {
 		return
 	}
 	var rp uintptr
+	var physical rect
 	if r != nil {
-		rp = uintptr(unsafe.Pointer(r))
+		physical = ap.scaledRect(*r)
+		rp = uintptr(unsafe.Pointer(&physical))
 	}
 	call(procInvalidateRect, ap.hwnd, rp, 0)
 }
@@ -1897,9 +1909,23 @@ func (ap *app) createMainWindow() error {
 		ap.trayIcon = call(procLoadIcon, 0, 32512) // Fallback: Windows application icon.
 	}
 	windowStyle := uint32(wsOverlappedWindow&^(0x00040000|0x00010000) | 0x02000000)
-	bounds := rect{0, 0, 1080, 710}
+	frame := rect{0, 0, 1080, 710}
+	call(procAdjustWindowRect, uintptr(unsafe.Pointer(&frame)), uintptr(windowStyle), 0, 0)
+	work := rect{0, 0, 1920, 1080}
+	call(procSystemParametersInfo, 48, 0, uintptr(unsafe.Pointer(&work)), 0)
+	frameW, frameH := frame.right-frame.left-1080, frame.bottom-frame.top-710
+	ap.scale = 1
+	for _, fit := range []float64{float64(work.right-work.left-24-frameW) / 1080, float64(work.bottom-work.top-24-frameH) / 710} {
+		if fit > 0 && fit < ap.scale {
+			ap.scale = fit
+		}
+	}
+	bounds := rect{0, 0, ap.px(1080), ap.px(710)}
 	call(procAdjustWindowRect, uintptr(unsafe.Pointer(&bounds)), uintptr(windowStyle), 0, 0)
-	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.6"))), uintptr(windowStyle), 70, 40, uintptr(bounds.right-bounds.left), uintptr(bounds.bottom-bounds.top), 0, 0, wc.instance, 0)
+	width, height := bounds.right-bounds.left, bounds.bottom-bounds.top
+	x, y := work.left+(work.right-work.left-width)/2, work.top+(work.bottom-work.top-height)/2
+	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.6"))), uintptr(windowStyle), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, wc.instance, 0)
+
 	if ap.hwnd == 0 {
 		return errors.New("Windows UI initialization failed")
 	}

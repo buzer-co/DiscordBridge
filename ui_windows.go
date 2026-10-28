@@ -7,6 +7,25 @@ import (
 	"unsafe"
 )
 
+// The design stays at 1080x710; compact displays get one consistent scale.
+func (ap *app) px(v int32) int32 {
+	if ap.scale <= 0 || ap.scale == 1 {
+		return v
+	}
+	return int32(float64(v)*ap.scale + 0.5)
+}
+func (ap *app) scaledRect(r rect) rect {
+	return rect{ap.px(r.left), ap.px(r.top), ap.px(r.right), ap.px(r.bottom)}
+}
+func stretchCopy(dst uintptr, w, h int32, src uintptr, sw, sh int32) {
+	if w == sw && h == sh {
+		call(procBitBlt, dst, 0, 0, uintptr(w), uintptr(h), src, 0, 0, 0x00CC0020)
+		return
+	}
+	call(procSetStretchBltMode, dst, 4)
+	call(procSetBrushOrg, dst, 0, 0, 0)
+	call(procStretchBlt, dst, 0, 0, uintptr(w), uintptr(h), src, 0, 0, uintptr(sw), uintptr(sh), 0x00CC0020)
+}
 func (ap *app) releaseBuffer() {
 	if ap.bufferDC != 0 {
 		call(procSelectObject, ap.bufferDC, ap.bufferOld)
@@ -19,8 +38,9 @@ func (ap *app) releaseBuffer() {
 func (ap *app) paintBuffered(h uintptr, dirty rect) {
 	var r rect
 	call(procGetClientRect, ap.hwnd, uintptr(unsafe.Pointer(&r)))
-	w, hgt := r.right, r.bottom
-	if w <= 0 || hgt <= 0 {
+	actualW, actualH := r.right, r.bottom
+	w, hgt := int32(1080), int32(710)
+	if actualW <= 0 || actualH <= 0 {
 		return
 	}
 	fresh := ap.bufferDC == 0 || ap.bufferW != w || ap.bufferH != hgt
@@ -37,13 +57,14 @@ func (ap *app) paintBuffered(h uintptr, dirty rect) {
 		ap.bufferW, ap.bufferH = w, hgt
 	}
 	// The buffer retains the static artwork. Traffic paints only this panel.
-	if !fresh && dirty.left >= networkRect.left && dirty.top >= networkRect.top && dirty.right <= networkRect.right && dirty.bottom <= networkRect.bottom {
+	physicalNetwork := ap.scaledRect(networkRect)
+	if !fresh && dirty.left >= physicalNetwork.left && dirty.top >= physicalNetwork.top && dirty.right <= physicalNetwork.right && dirty.bottom <= physicalNetwork.bottom {
 		ap.paintNetwork(ap.bufferDC)
 	} else {
 		ap.paint(ap.bufferDC)
 	}
 	if dirty.right > dirty.left && dirty.bottom > dirty.top {
-		call(procBitBlt, h, uintptr(dirty.left), uintptr(dirty.top), uintptr(dirty.right-dirty.left), uintptr(dirty.bottom-dirty.top), ap.bufferDC, uintptr(dirty.left), uintptr(dirty.top), 0x00CC0020)
+		stretchCopy(h, actualW, actualH, ap.bufferDC, w, hgt)
 	}
 }
 
@@ -141,7 +162,12 @@ func (ap *app) paintNetwork(hdc uintptr) {
 }
 
 func (ap *app) paintButton(di *drawItem) {
-	w, h := di.rc.right-di.rc.left, di.rc.bottom-di.rc.top
+	actualW, actualH := di.rc.right-di.rc.left, di.rc.bottom-di.rc.top
+	logical, ok := ap.controlRects[int(di.ctlID)]
+	if !ok {
+		logical = di.rc
+	}
+	w, h := logical.right-logical.left, logical.bottom-logical.top
 	dc := call(procCreateCompatibleDC, di.hdc)
 	bmp := call(procCreateCompatibleBitmap, di.hdc, uintptr(w), uintptr(h))
 	if dc == 0 || bmp == 0 {
@@ -159,7 +185,7 @@ func (ap *app) paintButton(di *drawItem) {
 	copyItem.hdc = dc
 	copyItem.rc = rect{0, 0, w, h}
 	ap.drawButton(&copyItem)
-	call(procBitBlt, di.hdc, uintptr(di.rc.left), uintptr(di.rc.top), uintptr(w), uintptr(h), dc, 0, 0, 0x00CC0020)
+	stretchCopy(di.hdc, actualW, actualH, dc, w, h)
 	call(procSelectObject, dc, old)
 	call(procDeleteObject, bmp)
 	call(procDeleteDC, dc)

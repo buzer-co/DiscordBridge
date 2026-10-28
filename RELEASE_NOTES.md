@@ -2,7 +2,7 @@
 
 Türkçe: İlk herkese açık GitHub sürümü. Ağ ölçümünde tüm pencerenin ve ana düğmenin sürekli yenilenmesi kaldırıldı; yalnızca küçük ağ paneli güncellenir. Arayüz yuvarlak profil seçimleri ve yumuşak düğmelerle yenilendi. GoodbyeDPI / WinDivert motoru EXE içine gömülüdür. ExitLag ayarları değiştirilmez; Discord yalnızca düğmesine basıldığında açılır.
 
-English: First public GitHub release. Traffic updates repaint only the network panel, with buffered native drawing and no periodic PowerShell process. Includes rounded profile choices, saved settings, DNS backup/restore and explicit Discord launch.
+English: First public GitHub release. Traffic updates repaint only the network panel, with buffered native drawing and no periodic PowerShell process. The window scales to fit compact desktops. Includes rounded profile choices, saved settings, DNS backup/restore and explicit Discord launch.
 
 ### Downloads
 

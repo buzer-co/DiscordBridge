@@ -20,6 +20,7 @@ Closing the window hides it to the system tray. Use the tray menu to exit or sto
 - Traffic samples repaint only the small network panel. They do not refresh the entire window or main button.
 - Buffered window and button painting, correct rounded-corner backgrounds, and bounded 60-sample history.
 - Native 64-bit Windows traffic counters, without launching PowerShell for every sample.
+- The window scales to fit compact desktops without clipping controls.
 - Soft rounded controls, compact profile choices, manual Discord launch and persisted preferences.
 - The dedicated Superonline + ExitLag profile preserves `-5 --native-frag --blacklist discord-domains.txt`. ExitLag settings are left untouched.
 
