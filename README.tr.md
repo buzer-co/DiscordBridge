@@ -53,3 +53,7 @@ WinDivert: https://github.com/basil00/WinDivert
 Windows ağ sayaçları: https://learn.microsoft.com/en-us/windows/win32/api/netioapi/ns-netioapi-mib_if_row2
 
 GitHub sürüm derlemesi Go 1.27.3 kullanır. Kaynak paketinde üçüncü taraf motor bileşenlerinin ilgili kaynak arşivleri ve lisansları da yer alır.
+
+## Code signing policy
+
+Signing preparation is documented in [Code signing policy](docs/CODE_SIGNING_POLICY.md) and [Privacy policy](docs/PRIVACY.md). A SignPath Foundation eligibility review is being prepared; no submission or approval is claimed. Existing release files remain unsigned.

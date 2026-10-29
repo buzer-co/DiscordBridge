@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Preparation only. Provider eligibility review and approval are required. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="DiscordBridge_4_6_Stable.exe"
+             product-name="Discord Bridge"
+             product-version="${version}"
+             file-version="${version}"
+             company-name="Burhan Uzer"
+             original-filename="DiscordBridge.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -1,17 +1,13 @@
 from pathlib import Path
 import hashlib
-import struct
 import subprocess
 import zipfile
+from verify_payload import verify_payload_file
 
 root = Path(__file__).resolve().parents[1]
 dist = root / 'dist'
 exe = dist / 'DiscordBridge_4_6_Stable.exe'
-b = exe.read_bytes()
-assert b.startswith(b'MZ') and b[-48:-40] == b'DBRIDGE3'
-length = struct.unpack('<Q', b[-40:-32])[0]
-assert b[-48-length:-48] == (root / 'engine.zip').read_bytes()
-assert hashlib.sha256(b[-48-length:-48]).digest() == b[-32:]
+verify_payload_file(exe)
 with zipfile.ZipFile(dist / 'DiscordBridge_4_6_Windows.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for path in [exe, root/'README.tr.md', root/'LICENSE', root/'THIRD_PARTY_NOTICES.md', root/'GOODBYEDPI_APACHE_2_LICENSE.txt', root/'WINDIVERT_LGPL_3_LICENSE.txt']:
         z.write(path, path.name)
