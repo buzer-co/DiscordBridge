@@ -54,3 +54,7 @@ The embedded engine is unchanged from the official GoodbyeDPI 0.2.3rc3 release p
 ## License
 
 Discord Bridge code: [MIT](LICENSE). GoodbyeDPI: Apache-2.0. WinDivert: LGPL-3.0. Third-party licenses do not change under this repository's MIT license.
+
+## Code signing policy
+
+Signing preparation is documented in [Code signing policy](docs/CODE_SIGNING_POLICY.md) and [Privacy policy](docs/PRIVACY.md). A SignPath Foundation eligibility review is being prepared; no submission or approval is claimed. Existing release files remain unsigned.

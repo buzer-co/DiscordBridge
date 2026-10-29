@@ -1,0 +1,97 @@
+name: Prepare and sign Windows candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: signpath-production
+  cancel-in-progress: false
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main' && vars.SIGNPATH_ENABLED == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Require real provider configuration
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($key in @('SIGNPATH_API_TOKEN','SIGNPATH_ORGANIZATION_ID','SIGNPATH_PROJECT_SLUG','SIGNPATH_SIGNING_POLICY_SLUG','SIGNPATH_ARTIFACT_CONFIGURATION_SLUG')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($key))) { throw "Missing provider configuration: $key" }
+          }
+      - name: Test source and dependency provenance
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go test -buildvcs=false -count=1 -v .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s scripts -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/verify_engine.py
+      - name: Build the artifact in this trusted run
+        id: build
+        run: |
+          python build.py dist/DiscordBridge_4_6_Stable.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/verify_metadata.ps1 -Path dist/DiscordBridge_4_6_Stable.exe
+          $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path dist/DiscordBridge_4_6_Stable.exe).Path).ProductVersion
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Upload exactly the unsigned wrapper executable
+        id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: DiscordBridge-unsigned-for-signing
+          path: dist/DiscordBridge_4_6_Stable.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Request SignPath signing with maintainer approval
+        id: signpath
+        uses: SignPath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 2700
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.build.outputs.version) }}
+      - name: Verify signed bytes and publisher before packaging
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signed = Join-Path $PWD 'signed/DiscordBridge_4_6_Stable.exe'
+          if (-not (Test-Path $signed)) { throw 'Expected signed executable was not returned' }
+          $signature = Get-AuthenticodeSignature $signed
+          if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
+          if ($signature.SignerCertificate.Subject -notmatch 'SignPath Foundation') { throw 'Unexpected signing publisher' }
+          ./scripts/verify_metadata.ps1 -Path $signed
+          python scripts/verify_payload.py $signed
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item $signed dist/DiscordBridge_4_6_Stable.exe -Force
+          python scripts/package_release.py
+      - name: Save signed candidates for owner review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: DiscordBridge-signed-candidate
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
