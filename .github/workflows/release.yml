@@ -63,12 +63,6 @@ jobs:
           name: DiscordBridge-Windows
           path: dist/*
           if-no-files-found: error
-      - name: Link signing policy from the existing release page
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'signing:')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: gh release edit v4.6.0 --repo "$GITHUB_REPOSITORY" --notes-file RELEASE_NOTES.md
       - name: Publish v4.6.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release:')
         env:
