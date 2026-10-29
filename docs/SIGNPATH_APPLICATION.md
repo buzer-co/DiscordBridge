@@ -1,6 +1,6 @@
 # SignPath Foundation eligibility application
 
-Status: **prepared, not submitted**. The maintainer must personally review the form and authorize its mandatory terms/data-processing acceptance before submission.
+Status: **submitted on 29 October 2026; eligibility review pending**. Submitted through the official application form with the maintainer's explicit authorization of the mandatory Code of Conduct and personal-data processing consents. The form confirmed "Form submitted" and "Thank you, we'll be in touch soon." This is a submission receipt, not provider approval or an issued certificate.
 
 - Project: Discord Bridge
 - Repository/homepage: https://github.com/buzer-co/DiscordBridge
