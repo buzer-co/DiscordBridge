@@ -1,6 +1,6 @@
 # Code signing policy
 
-Status: **preparation and eligibility review; application not yet submitted; no certificate issued and no signing service approved.** Existing v4.6.0 release assets remain unsigned.
+Status: **eligibility application submitted on 29 October 2026; provider approval pending; no certificate issued and no signing service approved.** Existing v4.6.0 release assets remain unsigned.
 
 ## Proposed provider and eligibility disclosure
 

@@ -1,6 +1,6 @@
 # SignPath setup after eligibility approval
 
-Current state: application preparation only. The [public application](https://signpath.org/apply.html) requires the maintainer's own acceptance of its Code of Conduct and personal-data processing. No approval, certificate, API credential or GitHub App installation is claimed.
+Current state: the [public application](https://signpath.org/apply.html) was submitted on 29 October 2026 with the maintainer's explicit authorization of its mandatory Code of Conduct and personal-data processing consents. Provider eligibility review is pending. No approval, certificate, API credential or GitHub App installation is claimed.
 
 ## Approval first
 
