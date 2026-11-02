@@ -1,6 +1,6 @@
 //go:build windows
 
-// Discord Bridge v4.6: softer Discord-style Win32 control center, explicit Discord launch, persistent tray.
+// Discord Bridge v4.7: softer Discord-style Win32 control center, explicit Discord launch, persistent tray.
 // Does not modify ExitLag. No telemetry or injected scripts.
 package main
 
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	versionText        = "4.6.0"
+	versionText        = "4.7.0"
 	payloadMagic       = "DBRIDGE3"
 	wsOverlappedWindow = 0x00CF0000
 	wsVisible          = 0x10000000
@@ -324,6 +324,8 @@ type dnsBackup struct {
 }
 
 type app struct {
+	dnsMu        sync.Mutex
+	dnsBridge    *dnsBridge
 	scale        float64
 	controlRects map[int]rect
 	uiState
@@ -816,7 +818,7 @@ func (ap *app) trayMenu() {
 	call(procAppendMenu, menu, mfString, trayMenuShow, uintptr(unsafe.Pointer(ptr(ap.L("Pencereyi Göster", "Show Window")))))
 	call(procAppendMenu, menu, mfString, trayMenuDiscord, uintptr(unsafe.Pointer(ptr(ap.L("Discord'u Aç", "Open Discord")))))
 	call(procAppendMenu, menu, mfSeparator, 0, 0)
-	call(procAppendMenu, menu, mfString, trayMenuExit, uintptr(unsafe.Pointer(ptr(ap.L("Programdan Çık (DPI Açık Kalır)", "Exit (Keep DPI Running)")))))
+	call(procAppendMenu, menu, mfString, trayMenuExit, uintptr(unsafe.Pointer(ptr(ap.L("Arka planda çalıştır", "Keep connection in background")))))
 	call(procAppendMenu, menu, mfString, trayMenuStopExit, uintptr(unsafe.Pointer(ptr(ap.L("DPI'ı Durdur ve Çık", "Stop DPI and Exit")))))
 	p := point{}
 	if call(procGetCursorPos, uintptr(unsafe.Pointer(&p))) == 0 {
@@ -831,14 +833,15 @@ func (ap *app) trayMenu() {
 	case trayMenuDiscord:
 		ap.openDiscord()
 	case trayMenuExit:
-		// Close only the UI; external GoodbyeDPI continues if it is active.
-		call(procDestroyWindow, ap.hwnd)
+		// Keep both the DPI process and the in-process DNS bridge alive.
+		ap.hideToTray()
 	case trayMenuStopExit:
 		if ap.busy {
 			ap.restoreFromTray()
 			ap.alert("İşlem devam ediyor", "Devam eden bağlantı işlemi bitince yeniden deneyin.")
 			return
 		}
+		ap.stopDiscordDNS()
 		if err := ap.stopOwned(); err != nil {
 			ap.restoreFromTray()
 			ap.alert("DPI durdurulamadı", err.Error())
@@ -1051,6 +1054,7 @@ func wndproc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		a.restoreFromTray()
 		return 0
 	case wmDestroy:
+		a.stopDiscordDNS()
 		close(a.done)
 		a.releaseBuffer()
 		a.removeTray()
@@ -1154,7 +1158,7 @@ func (ap *app) backupPath() string  { return filepath.Join(ap.dataDir, "dns-back
 func (ap *app) processPath() string { return filepath.Join(ap.dataDir, "process.json") }
 func (ap *app) domainsPath() string { return filepath.Join(ap.dataDir, "discord-domains.txt") }
 func (ap *app) createDomains() error {
-	content := "discord.com\r\ndiscord.gg\r\ndiscordapp.com\r\ndiscordapp.net\r\ndiscord.media\r\n"
+	content := strings.Join(discordDNSRoots, "\r\n") + "\r\n"
 	return os.WriteFile(ap.domainsPath(), []byte(content), 0600)
 }
 func processRunning(pid int, expected string) bool {
@@ -1188,6 +1192,18 @@ func (ap *app) handleStart() {
 		if err := ap.createDomains(); err != nil {
 			return err
 		}
+		if err := ap.ensureDependency(); err != nil {
+			return err
+		}
+		if err := ap.startDiscordDNS(); err != nil {
+			return fmt.Errorf("Discord DNS: %w", err)
+		}
+		keepDNS := false
+		defer func() {
+			if !keepDNS {
+				ap.stopDiscordDNS()
+			}
+		}()
 		if ap.isRunning() {
 			p, _ := ap.readProcess()
 			if err := checkHTTPS(); err == nil {
@@ -1197,35 +1213,19 @@ func (ap *app) handleStart() {
 					id = "special"
 				}
 				ap.enqueue(event{running: &t, connected: &t, activeProfile: id, state: "Bağlantı hazır", line: ap.L("Önceki bağlantı hâlâ çalışıyor.", "Previous connection is still running.")})
+				keepDNS = true
 				return nil
 			}
 			if err := ap.stopOwned(); err != nil {
 				return err
 			}
 		}
-		ap.enqueue(event{state: "Ağ kontrol ediliyor", line: ap.L("DNS kontrol ediliyor...", "Checking DNS...")})
-		ips, err := net.LookupIP("updates.discord.com")
-		poisoned := err != nil || len(ips) == 0
-		for _, ip := range ips {
-			if ip.String() == "195.175.254.2" || strings.EqualFold(ip.String(), "2a01:358:4014:a00::3") {
-				poisoned = true
-			}
-		}
-		if poisoned {
-			ap.enqueue(event{state: "DNS düzeltiliyor", line: ap.L("DNS yanıtı hatalı. Yedek alınıp Cloudflare deneniyor.", "DNS response blocked. Backing up and applying Cloudflare.")})
-			if err := ap.ensureDNS(); err != nil {
-				return fmt.Errorf("DNS: %w", err)
-			}
-		} else {
-			ap.enqueue(event{dns: "DNS doğru", line: ap.L("DNS yanıtı normal.", "DNS resolution looks normal.")})
-		}
+		ap.enqueue(event{state: "Ağ kontrol ediliyor", line: ap.L("Discord bağlantısı kontrol ediliyor...", "Checking Discord connectivity...")})
 		if err := checkHTTPS(); err == nil {
 			t := true
 			ap.enqueue(event{connected: &t, activeProfile: "direct", state: "Bağlantı hazır", line: ap.L("Doğrudan erişim başarılı; DPI motoru gerekmedi.", "Direct access works; DPI engine was not required.")})
+			keepDNS = true
 			return nil
-		}
-		if err := ap.ensureDependency(); err != nil {
-			return err
 		}
 		failed := make([]string, 0, len(plan))
 		for _, pr := range plan {
@@ -1238,6 +1238,7 @@ func (ap *app) handleStart() {
 			if err := checkHTTPS(); err == nil {
 				t := true
 				ap.enqueue(event{running: &t, connected: &t, activeProfile: pr.id, lastWorking: pr.id, state: "Bağlantı hazır", line: ap.L("Çalışan profil kaydedildi: ", "Working profile saved: ") + ap.profileName(pr.id)})
+				keepDNS = true
 				return nil
 			} else {
 				failed = append(failed, pr.id+": "+err.Error())
@@ -1280,35 +1281,6 @@ func (ap *app) openDiscord() {
 	if r <= 32 {
 		call(procShellExecute, ap.hwnd, uintptr(unsafe.Pointer(ptr("open"))), uintptr(unsafe.Pointer(ptr("https://discord.com/app"))), 0, 0, swNormal)
 	}
-}
-
-func (ap *app) ensureDNS() error {
-	d, e := readCurrentDNS()
-	if e != nil {
-		return e
-	}
-	backup := ap.backupPath()
-	if original, e := os.ReadFile(backup); e == nil {
-		var b dnsBackup
-		if json.Unmarshal(original, &b) != nil || !strings.EqualFold(b.GUID, d.GUID) {
-			return errors.New("Önceki DNS yedeği başka bağdaştırıcıya ait; mevcut ayarlar değiştirilmedi")
-		}
-	} else {
-		b, _ := json.MarshalIndent(d, "", "  ")
-		if e := os.WriteFile(backup, b, 0600); e != nil {
-			return e
-		}
-	}
-	v6 := ""
-	if d.IPv6Enabled {
-		v6 = ",'2606:4700:4700::1111','2606:4700:4700::1001'"
-	}
-	script := fmt.Sprintf("$ErrorActionPreference='Stop'; Set-DnsClientServerAddress -InterfaceIndex %d -ServerAddresses @('1.1.1.1','1.0.0.1'%s);Clear-DnsClientCache; 'DNS_OK'", d.Index, v6)
-	if _, e := powershell(script); e != nil {
-		return e
-	}
-	ap.enqueue(event{line: "Cloudflare DNS uygulandı, eski DNS ayarları yedeklendi: " + d.Alias, dns: "Cloudflare"})
-	return nil
 }
 
 func (ap *app) dependencyRoot() string { return filepath.Join(ap.dataDir, "engine-offline") }
@@ -1738,6 +1710,7 @@ func checkHTTPS() error {
 
 func (ap *app) handleStop() {
 	ap.work(ap.L("Yalnızca bu uygulamanın başlattığı GoodbyeDPI kapatılıyor...", "Stopping only the GoodbyeDPI process started by this app..."), func() error {
+		ap.stopDiscordDNS()
 		if e := ap.stopOwned(); e != nil {
 			return e
 		}
@@ -1924,7 +1897,7 @@ func (ap *app) createMainWindow() error {
 	call(procAdjustWindowRect, uintptr(unsafe.Pointer(&bounds)), uintptr(windowStyle), 0, 0)
 	width, height := bounds.right-bounds.left, bounds.bottom-bounds.top
 	x, y := work.left+(work.right-work.left-width)/2, work.top+(work.bottom-work.top-height)/2
-	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.6"))), uintptr(windowStyle), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, wc.instance, 0)
+	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.7"))), uintptr(windowStyle), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, wc.instance, 0)
 
 	if ap.hwnd == 0 {
 		return errors.New("Windows UI initialization failed")
@@ -2007,7 +1980,7 @@ func main() {
 	}
 	call(procShowWindow, a.hwnd, swShow)
 	call(procUpdateWindow, a.hwnd)
-	a.logLine("Discord Bridge 4.6: Superonline + ExitLag preserved (-5 --native-frag with Discord blacklist).")
+	a.logLine("Discord Bridge 4.7: selective Discord DoH; adapter DNS preserved.")
 
 	go a.monitorTraffic()
 	// Do not start connection or Discord until the user clicks Start.
@@ -2018,6 +1991,14 @@ func main() {
 	}
 	go func() {
 		if a.isRunning() {
+			if err := a.ensureDependency(); err != nil {
+				a.enqueue(event{line: err.Error()})
+				return
+			}
+			if err := a.startDiscordDNS(); err != nil {
+				a.enqueue(event{line: err.Error()})
+				return
+			}
 			r := true
 			a.enqueue(event{running: &r, state: "DPI aktif", line: "Önceki GoodbyeDPI işlemi hâlâ açık."})
 		}

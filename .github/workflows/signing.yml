@@ -47,17 +47,17 @@ jobs:
       - name: Build the artifact in this trusted run
         id: build
         run: |
-          python build.py dist/DiscordBridge_4_6_Stable.exe
+          python build.py dist/DiscordBridge_4_7_Stable.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./scripts/verify_metadata.ps1 -Path dist/DiscordBridge_4_6_Stable.exe
-          $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path dist/DiscordBridge_4_6_Stable.exe).Path).ProductVersion
+          ./scripts/verify_metadata.ps1 -Path dist/DiscordBridge_4_7_Stable.exe
+          $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path dist/DiscordBridge_4_7_Stable.exe).Path).ProductVersion
           "version=$version" >> $env:GITHUB_OUTPUT
       - name: Upload exactly the unsigned wrapper executable
         id: unsigned
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: DiscordBridge-unsigned-for-signing
-          path: dist/DiscordBridge_4_6_Stable.exe
+          path: dist/DiscordBridge_4_7_Stable.exe
           if-no-files-found: error
           retention-days: 7
       - name: Request SignPath signing with maintainer approval
@@ -78,7 +78,7 @@ jobs:
       - name: Verify signed bytes and publisher before packaging
         run: |
           $ErrorActionPreference = 'Stop'
-          $signed = Join-Path $PWD 'signed/DiscordBridge_4_6_Stable.exe'
+          $signed = Join-Path $PWD 'signed/DiscordBridge_4_7_Stable.exe'
           if (-not (Test-Path $signed)) { throw 'Expected signed executable was not returned' }
           $signature = Get-AuthenticodeSignature $signed
           if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($signature.Status)" }
@@ -86,7 +86,7 @@ jobs:
           ./scripts/verify_metadata.ps1 -Path $signed
           python scripts/verify_payload.py $signed
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item $signed dist/DiscordBridge_4_6_Stable.exe -Force
+          Copy-Item $signed dist/DiscordBridge_4_7_Stable.exe -Force
           python scripts/package_release.py
       - name: Save signed candidates for owner review
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

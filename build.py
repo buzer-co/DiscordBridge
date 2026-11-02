@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 
 root = Path(__file__).resolve().parent
-out = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / "DiscordBridge_4_6_Stable.exe"
+out = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / "DiscordBridge_4_7_Stable.exe"
 match=re.search(r'versionText\s*=\s*"([0-9.]+)"',(root/'main.go').read_text(encoding='utf-8'))
 if not match: raise SystemExit('Application version not found')
 parts=match.group(1).split('.')
