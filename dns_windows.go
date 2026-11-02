@@ -29,6 +29,7 @@ type dnsBridge struct {
 	cancel                                      context.CancelFunc
 	done                                        chan struct{}
 	once                                        sync.Once
+	driverMu                                    sync.Mutex
 	cleanup                                     func()
 }
 
@@ -101,7 +102,17 @@ func (b *dnsBridge) inject(wire []byte, addr *divertAddress) error {
 func (b *dnsBridge) run(ctx context.Context, exchange dnsExchange, onError func(error)) {
 	var work sync.WaitGroup
 	slots := make(chan struct{}, 32)
-	defer func() { work.Wait(); close(b.done) }()
+	defer func() {
+		// A receive failure must release the filter immediately: otherwise it
+		// would keep capturing all DNS with no reader until the user presses Stop.
+		b.cancel()
+		work.Wait()
+		b.driverMu.Lock()
+		b.closeHandle.Call(b.handle)
+		b.handle = 0
+		b.driverMu.Unlock()
+		close(b.done)
+	}()
 	buffer := make([]byte, 65575)
 	report := func(err error) {
 		if err != nil && ctx.Err() == nil && onError != nil {
@@ -157,9 +168,12 @@ func (b *dnsBridge) Close() {
 	b.once.Do(func() {
 		b.cancel()
 		// Stop receiving and drain captured packets before closing the handle.
-		b.shutdown.Call(b.handle, 1) // WINDIVERT_SHUTDOWN_RECV
+		b.driverMu.Lock()
+		if b.handle != 0 {
+			b.shutdown.Call(b.handle, 1) // WINDIVERT_SHUTDOWN_RECV
+		}
+		b.driverMu.Unlock()
 		<-b.done
-		b.closeHandle.Call(b.handle)
 		if b.cleanup != nil {
 			b.cleanup()
 		}
@@ -171,7 +185,13 @@ func (ap *app) startDiscordDNS() error {
 	ap.dnsMu.Lock()
 	defer ap.dnsMu.Unlock()
 	if ap.dnsBridge != nil {
-		return nil
+		select {
+		case <-ap.dnsBridge.done:
+			ap.dnsBridge.Close()
+			ap.dnsBridge = nil
+		default:
+			return nil
+		}
 	}
 	exchange, cleanup := newDiscordDoH()
 	b, err := startDNSBridge(ap.dependencyRoot(), exchange, cleanup, func(err error) {

@@ -150,6 +150,25 @@ func TestNativeSelectiveDNS(t *testing.T) {
 	bridge.closeHandle.Call(low)
 	low = 0
 	bridge.Close()
+	// A stopped/failed receive loop must release its filter on its own, so an
+	// unexpected driver error cannot leave unrelated DNS captured with no reader.
+	restarted, err := startDNSBridge(dir, func(context.Context, []byte) ([]byte, error) {
+		return nil, fmt.Errorf("unexpected query in restart test")
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	restarted.shutdown.Call(restarted.handle, 1)
+	select {
+	case <-restarted.done:
+		if restarted.handle != 0 {
+			t.Fatal("receive failure retained DNS capture handle")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("receive failure did not release DNS capture")
+	}
+	restarted.Close()
 	after := dnsSettingsSnapshot(t)
 	if strings.TrimSpace(before) != strings.TrimSpace(after) {
 		t.Fatal("network adapter DNS settings changed")
