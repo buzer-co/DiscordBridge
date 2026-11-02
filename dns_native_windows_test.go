@@ -5,9 +5,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -36,7 +38,22 @@ func TestNativeSelectiveDNS(t *testing.T) {
 		t.Fatal("WinDivert ABI size mismatch")
 	}
 	before := dnsSettingsSnapshot(t)
-	dir := t.TempDir()
+	// Windows may retain the loaded .sys file until reboot even after every
+	// WinDivert handle is closed. Do not stop a shared global driver service.
+	dir, err := os.MkdirTemp("", "discordbridge-native-dns-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			var pathErr *os.PathError
+			if errors.As(err, &pathErr) && filepath.Base(pathErr.Path) == "WinDivert64.sys" && errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+				t.Log("Windows retains the verified WinDivert driver until reboot; global service left untouched")
+			} else {
+				t.Error(err)
+			}
+		}
+	}()
 	payload, err := os.ReadFile("engine.zip")
 	if err != nil {
 		t.Fatal(err)
