@@ -1,20 +1,22 @@
 package main
 
 type event struct {
-	connected          *bool
-	activeProfile      string
-	attempt            string
-	lastWorking        string
-	trafficSample      bool
-	trafficUnavailable bool
-	trafficRX          float64
-	trafficTX          float64
-	line               string
-	state              string
-	busy               *bool
-	running            *bool
-	setPath            string
-	dns                string
+	toolPage               int
+	toolState, toolMessage string
+	connected              *bool
+	activeProfile          string
+	attempt                string
+	lastWorking            string
+	trafficSample          bool
+	trafficUnavailable     bool
+	trafficRX              float64
+	trafficTX              float64
+	line                   string
+	state                  string
+	busy                   *bool
+	running                *bool
+	setPath                string
+	dns                    string
 }
 type uiState struct {
 	mode, selectedProfile, lastWorkingProfile, activeProfile, attemptingProfile, language string

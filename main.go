@@ -1,6 +1,6 @@
 //go:build windows
 
-// Discord Bridge v4.6: softer Discord-style Win32 control center, explicit Discord launch, persistent tray.
+// Discord Bridge v4.7: softer Discord-style Win32 control center, explicit Discord launch, persistent tray.
 // Does not modify ExitLag. No telemetry or injected scripts.
 package main
 
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	versionText        = "4.6.0"
+	versionText        = "4.7.0"
 	payloadMagic       = "DBRIDGE3"
 	wsOverlappedWindow = 0x00CF0000
 	wsVisible          = 0x10000000
@@ -106,6 +106,12 @@ const (
 	idProfile6         = 1053
 	idProfile9         = 1054
 	idProfile2         = 1055
+	idProfile7         = 1056
+	idProfile8         = 1057
+	idOverview         = 1070
+	idToolAction       = 1071
+	idToolSecondary    = 1072
+	idToolBack         = 1073
 	mbYesNo            = 0x00000004
 	mbIconQuestion     = 0x00000020
 	mbIconWarning      = 0x00000030
@@ -301,12 +307,9 @@ type style struct {
 	fg      uint32
 }
 type config struct {
-	ExePath            string `json:"exe_path"`
-	Mode               string `json:"mode"`
-	SelectedProfile    string `json:"selected_profile"`
 	LastWorkingProfile string `json:"last_working_profile"`
-	Language           string `json:"language"`
 }
+
 type processInfo struct {
 	PID     int    `json:"pid"`
 	Path    string `json:"path"`
@@ -324,6 +327,14 @@ type dnsBackup struct {
 }
 
 type app struct {
+	page         int
+	toolResults  map[int]*toolResult
+	activeTool   int
+	processMu    sync.Mutex
+	ownedProcess processInfo
+	ownedJob     uintptr
+	dnsMu        sync.Mutex
+	dnsBridge    *dnsBridge
 	scale        float64
 	controlRects map[int]rect
 	uiState
@@ -380,13 +391,24 @@ type dpiProfile struct {
 
 var dpiProfiles = []dpiProfile{
 	{"special", []string{"-5", "--native-frag"}},
-	{"standard5", []string{"-5"}},
 	{"alt6", []string{"-6"}},
+	{"alt7", []string{"-7"}},
+	{"alt8", []string{"-8"}},
 	{"alt9", []string{"-9"}},
 	{"alt2", []string{"-2"}},
+	{"legacy1", []string{"-1"}},
 }
-var profileButtonIDs = []int{idProfileAuto, idProfileSpecial, idProfile5, idProfile6, idProfile9, idProfile2}
-var profileIDs = []string{"auto", "special", "standard5", "alt6", "alt9", "alt2"}
+var profileButtonIDs = []int{idProfileAuto, idProfileSpecial, idProfile6, idProfile7, idProfile8, idProfile9, idProfile2, idProfile5}
+var profileIDs = []string{"auto", "special", "alt6", "alt7", "alt8", "alt9", "alt2", "legacy1"}
+
+func profileIndex(id int) int {
+	for i, n := range profileButtonIDs {
+		if id == n {
+			return i
+		}
+	}
+	return -1
+}
 
 func profileValid(id string) bool {
 	for _, p := range dpiProfiles {
@@ -405,17 +427,23 @@ func (ap *app) L(tr, en string) string {
 func (ap *app) profileName(id string) string {
 	switch id {
 	case "auto":
-		return ap.L("Otomatik seçim", "Auto discovery")
+		return ap.L("Otomatik", "Automatic")
 	case "special":
-		return "Superonline + ExitLag"
+		return ap.L("Dengeli", "Balanced")
 	case "standard5":
-		return "Standart · -5"
+		return ap.L("Dengeli", "Balanced")
 	case "alt6":
-		return "Alternatif · -6"
+		return ap.L("Uyumlu", "Compatible")
+	case "alt7":
+		return ap.L("Esnek", "Flexible")
+	case "alt8":
+		return ap.L("Birleşik", "Combined")
 	case "alt9":
-		return "Alternatif · -9"
+		return ap.L("Web desteği", "Web support")
 	case "alt2":
-		return "Alternatif · -2"
+		return ap.L("Klasik", "Classic")
+	case "legacy1":
+		return ap.L("Yedek", "Fallback")
 	case "direct":
 		return ap.L("Doğrudan bağlantı", "Direct connection")
 	}
@@ -444,7 +472,7 @@ func (ap *app) profilePlan() []dpiProfile {
 		}
 	}
 	for _, p := range dpiProfiles {
-		if !seen[p.id] {
+		if !seen[p.id] && p.id != "alt9" {
 			result = append(result, p)
 		}
 	}
@@ -624,6 +652,14 @@ func (ap *app) update() {
 		if e.setPath != "" {
 			ap.path = e.setPath
 		}
+		if e.toolPage != 0 {
+			r := ap.toolResult(e.toolPage)
+			r.state, r.message = e.toolState, e.toolMessage
+			ap.activeTool = 0
+			if ap.page == e.toolPage {
+				change.redraw = redrawContent
+			}
+		}
 	}
 	if change.saveConfig {
 		ap.saveConfig()
@@ -633,7 +669,9 @@ func (ap *app) update() {
 		ap.updateButtons()
 		ap.invalidate(nil)
 	case redrawTraffic:
-		ap.invalidate(&networkRect)
+		if ap.page == 0 {
+			ap.invalidate(&networkRect)
+		}
 	}
 }
 
@@ -650,7 +688,7 @@ func (ap *app) invalidate(r *rect) {
 	call(procInvalidateRect, ap.hwnd, rp, 0)
 }
 
-var networkRect = rect{240, 564, 1054, 686}
+var networkRect = rect{240, 580, 1054, 686}
 
 func boolean(v bool) uintptr {
 	if v {
@@ -659,21 +697,20 @@ func boolean(v bool) uintptr {
 	return 0
 }
 func (ap *app) logLine(s string) {
-	date := time.Now().Format("15:04:05")
-	line := "[" + date + "] " + s + "\r\n"
-	f, err := os.OpenFile(filepath.Join(ap.dataDir, "session.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err == nil {
-		_, _ = io.WriteString(f, line)
-		_ = f.Close()
-	}
-	call(procSendMessage, ap.logEdit, emSetSel, uintptr(^uint32(0)), uintptr(^uint32(0)))
-	call(procSendMessage, ap.logEdit, emReplaceSel, 0, uintptr(unsafe.Pointer(ptr(line))))
+	ap.appendToolLog(s + "\r\n")
 }
 func (ap *app) work(message string, fn func() error) {
 	if ap.busy {
 		return
 	}
 	ap.busy = true
+	jobPage := ap.page
+	ap.activeTool = jobPage
+	if jobPage != 0 {
+		r := ap.toolResult(jobPage)
+		r.state, r.message, r.lines = "running", message, nil
+		ap.renderToolLog()
+	}
 	ap.attemptingProfile = ""
 	ap.updateButtons()
 	ap.invalidate(nil)
@@ -683,13 +720,23 @@ func (ap *app) work(message string, fn func() error) {
 		if err != nil {
 			ap.enqueue(event{line: "HATA: " + err.Error(), state: "İşlem başarısız"})
 		}
+		if jobPage != 0 {
+			state, message := "success", ap.L("İşlem tamamlandı. Ayrıntılar aşağıda.", "Done. Details are shown below.")
+			if err != nil {
+				state, message = "error", err.Error()
+			}
+			ap.enqueue(event{toolPage: jobPage, toolState: state, toolMessage: message})
+		}
 		f := false
 		ap.enqueue(event{busy: &f})
 	}()
 }
 func (ap *app) updateButtons() {
 	for id, h := range ap.buttons {
-		enabled := !ap.busy || id == idOpenDiscord || id == idOpenLog
+		enabled := !ap.busy || id == idOpenDiscord || isNavigation(id)
+		if id == idToolAction && ap.page == idRestore && !ap.hasDNSBackup() {
+			enabled = false
+		}
 		if ap.enabled[id] != enabled {
 			ap.enabled[id] = enabled
 			call(procEnableWindow, h, boolean(enabled))
@@ -726,7 +773,7 @@ func (ap *app) selectProfile(id string) {
 		ap.selectedProfile = id
 	}
 	ap.saveConfig()
-	ap.logLine(ap.L("Profil seçimi kaydedildi: ", "Profile selection saved: ") + ap.profileName(id))
+	ap.logLine(ap.L("Profil seçildi: ", "Profile selected: ") + ap.profileName(id))
 	ap.invalidate(nil)
 	for _, n := range profileButtonIDs {
 		if h := ap.buttons[n]; h != 0 {
@@ -816,7 +863,7 @@ func (ap *app) trayMenu() {
 	call(procAppendMenu, menu, mfString, trayMenuShow, uintptr(unsafe.Pointer(ptr(ap.L("Pencereyi Göster", "Show Window")))))
 	call(procAppendMenu, menu, mfString, trayMenuDiscord, uintptr(unsafe.Pointer(ptr(ap.L("Discord'u Aç", "Open Discord")))))
 	call(procAppendMenu, menu, mfSeparator, 0, 0)
-	call(procAppendMenu, menu, mfString, trayMenuExit, uintptr(unsafe.Pointer(ptr(ap.L("Programdan Çık (DPI Açık Kalır)", "Exit (Keep DPI Running)")))))
+	call(procAppendMenu, menu, mfString, trayMenuExit, uintptr(unsafe.Pointer(ptr(ap.L("Arka planda çalıştır", "Keep connection in background")))))
 	call(procAppendMenu, menu, mfString, trayMenuStopExit, uintptr(unsafe.Pointer(ptr(ap.L("DPI'ı Durdur ve Çık", "Stop DPI and Exit")))))
 	p := point{}
 	if call(procGetCursorPos, uintptr(unsafe.Pointer(&p))) == 0 {
@@ -831,14 +878,15 @@ func (ap *app) trayMenu() {
 	case trayMenuDiscord:
 		ap.openDiscord()
 	case trayMenuExit:
-		// Close only the UI; external GoodbyeDPI continues if it is active.
-		call(procDestroyWindow, ap.hwnd)
+		// Keep both the DPI process and the in-process DNS bridge alive.
+		ap.hideToTray()
 	case trayMenuStopExit:
 		if ap.busy {
 			ap.restoreFromTray()
 			ap.alert("İşlem devam ediyor", "Devam eden bağlantı işlemi bitince yeniden deneyin.")
 			return
 		}
+		ap.stopDiscordDNS()
 		if err := ap.stopOwned(); err != nil {
 			ap.restoreFromTray()
 			ap.alert("DPI durdurulamadı", err.Error())
@@ -919,13 +967,19 @@ func brighten(c uint32, adjust int) uint32 {
 
 func (ap *app) refreshLabels() {
 	labels := map[int]string{
+		idOverview:    ap.L("Genel Bakış", "Overview"),
+		idToolBack:    ap.L("Genel bakış", "Overview"),
 		idOpenDiscord: ap.L("Discord’u Aç", "Open Discord"),
 		idDNS:         ap.L("DNS ayarları", "DNS settings"),
 		idRestore:     ap.L("DNS geri al", "Restore DNS"),
 		idTest:        ap.L("Bağlantı testi", "Connection test"),
-		idOpenLog:     ap.L("İşlem günlüğü", "Activity log"),
+		idOpenLog:     ap.L("İşlem durumu", "Operation status"),
 		idPack:        ap.L("Motoru doğrula", "Verify engine"),
 		idLanguage:    ap.L("Türkçe  /  English", "English  /  Türkçe"),
+	}
+	if ap.page != 0 {
+		tool := ap.toolInfo(ap.page)
+		labels[idToolAction], labels[idToolSecondary] = tool.action, tool.secondary
 	}
 	for i, id := range profileButtonIDs {
 		labels[id] = ap.profileName(profileIDs[i])
@@ -1002,11 +1056,17 @@ func wndproc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		case idStop:
 			a.handleStop()
 		case idDNS:
-			a.handleDNS()
+			a.showPage(idDNS)
 		case idRestore:
-			a.handleRestore()
+			a.showPage(idRestore)
 		case idTest:
-			a.handleTest()
+			a.showPage(idTest)
+		case idOverview, idToolBack:
+			a.showPage(0)
+		case idToolAction:
+			a.runToolAction(false)
+		case idToolSecondary:
+			a.runToolAction(true)
 		case idLanguage:
 			if a.language == "tr" {
 				a.language = "en"
@@ -1016,7 +1076,7 @@ func wndproc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 			a.saveConfig()
 			a.refreshLabels()
 			a.invalidate(nil)
-		case idProfileAuto, idProfileSpecial, idProfile5, idProfile6, idProfile9, idProfile2:
+		case idProfileAuto, idProfileSpecial, idProfile5, idProfile6, idProfile7, idProfile8, idProfile9, idProfile2:
 			for j, n := range profileButtonIDs {
 				if n == int(wparam&0xffff) {
 					a.selectProfile(profileIDs[j])
@@ -1024,13 +1084,12 @@ func wndproc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 				}
 			}
 		case idPack:
-			a.handleVerifyMotor()
+			a.showPage(idPack)
 		case idOpenDiscord:
 			a.logLine("Kullanıcı Discord'u Aç düğmesine bastı.")
 			a.openDiscord()
 		case idOpenLog:
-			logPath := filepath.Join(a.dataDir, "session.log")
-			call(procShellExecute, hwnd, uintptr(unsafe.Pointer(ptr("open"))), uintptr(unsafe.Pointer(ptr(logPath))), 0, 0, swNormal)
+			a.showPage(idOpenLog)
 		}
 		return 0
 	case wmAppEvent:
@@ -1051,6 +1110,8 @@ func wndproc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		a.restoreFromTray()
 		return 0
 	case wmDestroy:
+		a.stopDiscordDNS()
+		_ = a.stopOwned()
 		close(a.done)
 		a.releaseBuffer()
 		a.removeTray()
@@ -1108,32 +1169,30 @@ func findGoodbyeDPI(root string) string {
 	return ""
 }
 func (ap *app) saveConfig() {
-	data, _ := json.MarshalIndent(config{ExePath: ap.path, Mode: ap.mode, SelectedProfile: ap.selectedProfile, LastWorkingProfile: ap.lastWorkingProfile, Language: ap.language}, "", "  ")
+	data, _ := json.MarshalIndent(config{LastWorkingProfile: ap.lastWorkingProfile}, "", "  ")
 	_ = os.WriteFile(filepath.Join(ap.dataDir, "settings.json"), data, 0600)
 }
 func (ap *app) loadConfig() {
+	ap.mode = "auto"
+	ap.selectedProfile = "special"
 	data, err := os.ReadFile(filepath.Join(ap.dataDir, "settings.json"))
-	if err == nil {
-		var c config
-		if json.Unmarshal(data, &c) == nil {
-			if c.Mode == "manual" || c.Mode == "auto" {
-				ap.mode = c.Mode
-			}
-			if profileValid(c.SelectedProfile) {
-				ap.selectedProfile = c.SelectedProfile
-			}
-			if profileValid(c.LastWorkingProfile) {
-				ap.lastWorkingProfile = c.LastWorkingProfile
-			}
-			if c.Language == "en" || c.Language == "tr" {
-				ap.language = c.Language
-			}
-			if _, err := os.Stat(c.ExePath); err == nil {
-				ap.path = c.ExePath
-			}
-		}
+	if err != nil {
+		return
 	}
+	var c config
+	if json.Unmarshal(data, &c) != nil {
+		return
+	}
+	if c.LastWorkingProfile == "standard5" {
+		c.LastWorkingProfile = "special"
+	}
+	if profileValid(c.LastWorkingProfile) {
+		ap.lastWorkingProfile = c.LastWorkingProfile
+		ap.selectedProfile = c.LastWorkingProfile
+	}
+	ap.saveConfig() // Strip old language, path and unverified selection fields.
 }
+
 func powershell(script string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1154,7 +1213,7 @@ func (ap *app) backupPath() string  { return filepath.Join(ap.dataDir, "dns-back
 func (ap *app) processPath() string { return filepath.Join(ap.dataDir, "process.json") }
 func (ap *app) domainsPath() string { return filepath.Join(ap.dataDir, "discord-domains.txt") }
 func (ap *app) createDomains() error {
-	content := "discord.com\r\ndiscord.gg\r\ndiscordapp.com\r\ndiscordapp.net\r\ndiscord.media\r\n"
+	content := strings.Join(discordDNSRoots, "\r\n") + "\r\n"
 	return os.WriteFile(ap.domainsPath(), []byte(content), 0600)
 }
 func processRunning(pid int, expected string) bool {
@@ -1166,6 +1225,12 @@ func processRunning(pid int, expected string) bool {
 	return e == nil && strings.TrimSpace(out) == "YES"
 }
 func (ap *app) readProcess() (processInfo, error) {
+	ap.processMu.Lock()
+	p := ap.ownedProcess
+	ap.processMu.Unlock()
+	if p.PID > 0 {
+		return p, nil
+	}
 	var data processInfo
 	b, e := os.ReadFile(ap.processPath())
 	if e != nil {
@@ -1188,6 +1253,18 @@ func (ap *app) handleStart() {
 		if err := ap.createDomains(); err != nil {
 			return err
 		}
+		if err := ap.ensureDependency(); err != nil {
+			return err
+		}
+		if err := ap.startDiscordDNS(); err != nil {
+			return fmt.Errorf("Discord DNS: %w", err)
+		}
+		keepDNS := false
+		defer func() {
+			if !keepDNS {
+				ap.stopDiscordDNS()
+			}
+		}()
 		if ap.isRunning() {
 			p, _ := ap.readProcess()
 			if err := checkHTTPS(); err == nil {
@@ -1197,50 +1274,35 @@ func (ap *app) handleStart() {
 					id = "special"
 				}
 				ap.enqueue(event{running: &t, connected: &t, activeProfile: id, state: "Bağlantı hazır", line: ap.L("Önceki bağlantı hâlâ çalışıyor.", "Previous connection is still running.")})
+				keepDNS = true
 				return nil
 			}
 			if err := ap.stopOwned(); err != nil {
 				return err
 			}
 		}
-		ap.enqueue(event{state: "Ağ kontrol ediliyor", line: ap.L("DNS kontrol ediliyor...", "Checking DNS...")})
-		ips, err := net.LookupIP("updates.discord.com")
-		poisoned := err != nil || len(ips) == 0
-		for _, ip := range ips {
-			if ip.String() == "195.175.254.2" || strings.EqualFold(ip.String(), "2a01:358:4014:a00::3") {
-				poisoned = true
-			}
-		}
-		if poisoned {
-			ap.enqueue(event{state: "DNS düzeltiliyor", line: ap.L("DNS yanıtı hatalı. Yedek alınıp Cloudflare deneniyor.", "DNS response blocked. Backing up and applying Cloudflare.")})
-			if err := ap.ensureDNS(); err != nil {
-				return fmt.Errorf("DNS: %w", err)
-			}
-		} else {
-			ap.enqueue(event{dns: "DNS doğru", line: ap.L("DNS yanıtı normal.", "DNS resolution looks normal.")})
-		}
+		ap.enqueue(event{state: "Ağ kontrol ediliyor", line: ap.L("Discord bağlantısı kontrol ediliyor...", "Checking Discord connectivity...")})
 		if err := checkHTTPS(); err == nil {
 			t := true
 			ap.enqueue(event{connected: &t, activeProfile: "direct", state: "Bağlantı hazır", line: ap.L("Doğrudan erişim başarılı; DPI motoru gerekmedi.", "Direct access works; DPI engine was not required.")})
+			keepDNS = true
 			return nil
-		}
-		if err := ap.ensureDependency(); err != nil {
-			return err
 		}
 		failed := make([]string, 0, len(plan))
 		for _, pr := range plan {
 			ap.enqueue(event{attempt: pr.id, state: "Profiller deneniyor", line: ap.L("Denenen profil: ", "Testing profile: ") + ap.profileName(pr.id)})
 			if err := ap.launchDPI(pr.id, pr.args); err != nil {
-				failed = append(failed, pr.id+": "+err.Error())
+				failed = append(failed, ap.profileName(pr.id)+": "+err.Error())
 				continue
 			}
 			time.Sleep(1200 * time.Millisecond)
 			if err := checkHTTPS(); err == nil {
 				t := true
 				ap.enqueue(event{running: &t, connected: &t, activeProfile: pr.id, lastWorking: pr.id, state: "Bağlantı hazır", line: ap.L("Çalışan profil kaydedildi: ", "Working profile saved: ") + ap.profileName(pr.id)})
+				keepDNS = true
 				return nil
 			} else {
-				failed = append(failed, pr.id+": "+err.Error())
+				failed = append(failed, ap.profileName(pr.id)+": "+err.Error())
 			}
 			_ = ap.stopOwned()
 		}
@@ -1253,6 +1315,9 @@ func (ap *app) handleStart() {
 	})
 }
 func profileIDFromName(s string) string {
+	if s == "standard5" {
+		return "special"
+	}
 	if profileValid(s) {
 		return s
 	}
@@ -1269,7 +1334,7 @@ func profileIDFromName(s string) string {
 		return "alt2"
 	}
 	if strings.Contains(s, "(-5)") {
-		return "standard5"
+		return "special"
 	}
 	return ""
 }
@@ -1280,35 +1345,6 @@ func (ap *app) openDiscord() {
 	if r <= 32 {
 		call(procShellExecute, ap.hwnd, uintptr(unsafe.Pointer(ptr("open"))), uintptr(unsafe.Pointer(ptr("https://discord.com/app"))), 0, 0, swNormal)
 	}
-}
-
-func (ap *app) ensureDNS() error {
-	d, e := readCurrentDNS()
-	if e != nil {
-		return e
-	}
-	backup := ap.backupPath()
-	if original, e := os.ReadFile(backup); e == nil {
-		var b dnsBackup
-		if json.Unmarshal(original, &b) != nil || !strings.EqualFold(b.GUID, d.GUID) {
-			return errors.New("Önceki DNS yedeği başka bağdaştırıcıya ait; mevcut ayarlar değiştirilmedi")
-		}
-	} else {
-		b, _ := json.MarshalIndent(d, "", "  ")
-		if e := os.WriteFile(backup, b, 0600); e != nil {
-			return e
-		}
-	}
-	v6 := ""
-	if d.IPv6Enabled {
-		v6 = ",'2606:4700:4700::1111','2606:4700:4700::1001'"
-	}
-	script := fmt.Sprintf("$ErrorActionPreference='Stop'; Set-DnsClientServerAddress -InterfaceIndex %d -ServerAddresses @('1.1.1.1','1.0.0.1'%s);Clear-DnsClientCache; 'DNS_OK'", d.Index, v6)
-	if _, e := powershell(script); e != nil {
-		return e
-	}
-	ap.enqueue(event{line: "Cloudflare DNS uygulandı, eski DNS ayarları yedeklendi: " + d.Alias, dns: "Cloudflare"})
-	return nil
 }
 
 func (ap *app) dependencyRoot() string { return filepath.Join(ap.dataDir, "engine-offline") }
@@ -1639,42 +1675,58 @@ func (ap *app) launchDPI(profile string, flags []string) error {
 	if e := checkEngineFiles(enginePath); e != nil {
 		return e
 	}
-	logPath := filepath.Join(ap.dataDir, "goodbyedpi.log")
-	f, e := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if e != nil {
-		return e
-	}
-	_, _ = io.WriteString(f, "\n[Discord Bridge v2] "+time.Now().Format(time.RFC3339)+" - "+profile+"\n")
 	args := append(append([]string{}, flags...), "--blacklist", ap.domainsPath())
 	cmd := exec.Command(enginePath, args...)
 	cmd.Dir = filepath.Dir(enginePath)
-	cmd.Stdout = f
-	cmd.Stderr = f
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if e := cmd.Start(); e != nil {
-		f.Close()
 		return e
 	}
-	meta, _ := json.Marshal(processInfo{PID: cmd.Process.Pid, Path: enginePath, Profile: profile})
-	if e := os.WriteFile(ap.processPath(), meta, 0600); e != nil {
+	job, e := attachOwnedJob(cmd.Process.Pid)
+	if e != nil {
 		_ = cmd.Process.Kill()
-		f.Close()
+		_ = cmd.Wait()
 		return e
 	}
+	ap.processMu.Lock()
+	ap.ownedProcess = processInfo{PID: cmd.Process.Pid, Path: enginePath, Profile: profile}
+	ap.ownedJob = job
+	ap.processMu.Unlock()
 	go func() {
-		e := cmd.Wait()
-		f.Close()
-		if e != nil {
-			ap.enqueue(event{line: "GoodbyeDPI kapandı: " + e.Error()})
+		_ = cmd.Wait()
+		ap.processMu.Lock()
+		unexpected := ap.ownedProcess.PID == cmd.Process.Pid
+		if unexpected {
+			ap.ownedProcess = processInfo{}
+			ap.ownedJob = 0
+			call(procCloseHandle, job)
+		}
+		ap.processMu.Unlock()
+		if unexpected {
+			f := false
+			ap.enqueue(event{running: &f, connected: &f, state: "İşlem başarısız", line: ap.L("Bağlantı motoru kapandı. Başlat ile yeniden deneyebilirsin.", "The connection engine stopped. Press Start to try again.")})
 		}
 	}()
 	time.Sleep(400 * time.Millisecond)
 	if !processRunning(cmd.Process.Pid, enginePath) {
-		return fmt.Errorf("Motor hemen kapandı; sürücü/güvenlik engeli olabilir (günlük: %s)", logPath)
+		return errors.New("Motor hemen kapandı; sürücü veya güvenlik engeli olabilir")
 	}
 	return nil
 }
 func (ap *app) stopOwned() error {
+	ap.processMu.Lock()
+	job := ap.ownedJob
+	if job != 0 {
+		ap.ownedJob = 0
+		ap.ownedProcess = processInfo{}
+	}
+	ap.processMu.Unlock()
+	if job != 0 {
+		call(procCloseHandle, job)
+		f := false
+		ap.enqueue(event{running: &f})
+		return nil
+	}
 	p, e := ap.readProcess()
 	if e != nil {
 		return nil
@@ -1738,6 +1790,7 @@ func checkHTTPS() error {
 
 func (ap *app) handleStop() {
 	ap.work(ap.L("Yalnızca bu uygulamanın başlattığı GoodbyeDPI kapatılıyor...", "Stopping only the GoodbyeDPI process started by this app..."), func() error {
+		ap.stopDiscordDNS()
 		if e := ap.stopOwned(); e != nil {
 			return e
 		}
@@ -1924,7 +1977,7 @@ func (ap *app) createMainWindow() error {
 	call(procAdjustWindowRect, uintptr(unsafe.Pointer(&bounds)), uintptr(windowStyle), 0, 0)
 	width, height := bounds.right-bounds.left, bounds.bottom-bounds.top
 	x, y := work.left+(work.right-work.left-width)/2, work.top+(work.bottom-work.top-height)/2
-	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.6"))), uintptr(windowStyle), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, wc.instance, 0)
+	ap.hwnd = call(procCreateWindow, 0, uintptr(unsafe.Pointer(wc.className)), uintptr(unsafe.Pointer(ptr("Discord Bridge 4.7"))), uintptr(windowStyle), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, wc.instance, 0)
 
 	if ap.hwnd == 0 {
 		return errors.New("Windows UI initialization failed")
@@ -1936,10 +1989,15 @@ func (ap *app) createMainWindow() error {
 	corner := int32(2)
 	call(procDwmSetWindowAttribute, ap.hwnd, 33, uintptr(unsafe.Pointer(&corner)), uintptr(unsafe.Sizeof(corner)))
 	ap.logEdit = createControl("EDIT", "", esReadOnly|esMultiline|esAutoVScroll|wsVScroll, 0, 0, 0, 0, 2002)
+	call(procSendMessage, ap.logEdit, wmSetFont, ap.fSmall, 0)
 	call(procShowWindow, ap.logEdit, swHide)
-	ap.button(idStart, "", 240, 282, 399, 54, primary, white)
-	ap.button(idOpenDiscord, "", 655, 282, 399, 54, surface, white)
-	positions := [][4]int32{{240, 418, 399, 64}, {655, 418, 399, 64}, {240, 496, 192, 44}, {447, 496, 192, 44}, {655, 496, 192, 44}, {862, 496, 192, 44}}
+	ap.button(idStart, "", 240, 262, 399, 52, primary, white)
+	ap.button(idOverview, "", 15, 145, 180, 46, sidebar, white)
+	ap.button(idToolAction, "", 264, 282, 366, 50, primary, white)
+	ap.button(idToolSecondary, "", 646, 282, 384, 50, surface, white)
+	ap.button(idToolBack, "", 264, 645, 220, 40, surface, white)
+	ap.button(idOpenDiscord, "", 655, 262, 399, 52, surface, white)
+	positions := [][4]int32{{240, 395, 399, 58}, {655, 395, 399, 58}, {240, 465, 260, 42}, {517, 465, 260, 42}, {794, 465, 260, 42}, {240, 519, 260, 42}, {517, 519, 260, 42}, {794, 519, 260, 42}}
 	for i, id := range profileButtonIDs {
 		v := positions[i]
 		ap.button(id, "", v[0], v[1], v[2], v[3], surface, white)
@@ -1951,6 +2009,7 @@ func (ap *app) createMainWindow() error {
 	ap.button(idPack, "", 15, 478, 180, 40, sidebar, white)
 	ap.button(idLanguage, "", 19, 580, 172, 36, card, white)
 	ap.refreshLabels()
+	ap.showPage(0)
 	return nil
 }
 
@@ -1996,6 +2055,7 @@ func main() {
 	}
 	a = &app{root: filepath.Dir(exe), dataDir: stateDir(), uiState: uiState{status: "Bekliyor", mode: "auto", selectedProfile: "special", language: "tr"}, buttons: make(map[int]uintptr), styles: make(map[uint32]style), enabled: make(map[int]bool), done: make(chan struct{})}
 	a.loadConfig()
+	a.purgeLegacyLogs()
 
 	if err := a.createMainWindow(); err != nil {
 		a.alert("Discord Bridge", err.Error())
@@ -2007,7 +2067,7 @@ func main() {
 	}
 	call(procShowWindow, a.hwnd, swShow)
 	call(procUpdateWindow, a.hwnd)
-	a.logLine("Discord Bridge 4.6: Superonline + ExitLag preserved (-5 --native-frag with Discord blacklist).")
+	a.logLine("Discord Bridge 4.7: selective Discord DoH; adapter DNS preserved.")
 
 	go a.monitorTraffic()
 	// Do not start connection or Discord until the user clicks Start.
@@ -2018,6 +2078,14 @@ func main() {
 	}
 	go func() {
 		if a.isRunning() {
+			if err := a.ensureDependency(); err != nil {
+				a.enqueue(event{line: err.Error()})
+				return
+			}
+			if err := a.startDiscordDNS(); err != nil {
+				a.enqueue(event{line: err.Error()})
+				return
+			}
 			r := true
 			a.enqueue(event{running: &r, state: "DPI aktif", line: "Önceki GoodbyeDPI işlemi hâlâ açık."})
 		}

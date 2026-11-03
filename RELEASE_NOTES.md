@@ -1,22 +1,13 @@
-## Discord Bridge 4.6.0
+## Discord Bridge 4.7.0 — selective encrypted DNS
 
-Türkçe: İlk herkese açık GitHub sürümü. Ağ ölçümünde tüm pencerenin ve ana düğmenin sürekli yenilenmesi kaldırıldı; yalnızca küçük ağ paneli güncellenir. Arayüz yuvarlak profil seçimleri ve yumuşak düğmelerle yenilendi. GoodbyeDPI / WinDivert motoru EXE içine gömülüdür. ExitLag ayarları değiştirilmez; Discord yalnızca düğmesine basıldığında açılır.
+- Start leaves Windows and modem DNS configuration unchanged. The previous automatic adapter-DNS change has been removed.
+- Only the five Discord domain families and their subdomains use the in-process Cloudflare/Google DNS-over-HTTPS bridge. Other ordinary DNS queries keep their existing resolver.
+- The bridge uses the existing original WinDivert driver, verified by hash, with normal TLS certificate validation and resolver bootstrap independent of system DNS. No hosts/NRPT/proxy/route changes.
+- X/background mode keeps DNS and DPI alive in the tray. Stop/exit drains and closes the DNS filter. The old manual DNS button and restore backup remain available with explicit confirmation.
+- The sidebar now navigates to visible tool pages with actions, progress, results and a working Overview return. Theme spacing, profile cards and selected navigation are polished; buffered drawing and narrow traffic repaints are retained.
+- Persistent session/engine logs, language/path preferences and PID-file writes are removed. Only the last successful profile remains. Tool output is transient and cleared on navigation; old app-owned log files are removed.
+- Duplicate modes are consolidated; original missing modes 1, 7 and 8 are added with readable profile names. The last successful method is remembered. The UDP/443-restricting method remains optional and is skipped in fresh automatic discovery.
 
-English: First public GitHub release. Traffic updates repaint only the network panel, with buffered native drawing and no periodic PowerShell process. The window scales to fit compact desktops. Includes rounded profile choices, saved settings, DNS backup/restore and explicit Discord launch.
+Scope: ordinary IPv4/IPv6 UDP/53 only; loopback DNS proxies, caller-managed DoH/DoT, DNS over TCP and IPv6 extension headers are not intercepted. Native tests use controlled responses and do not establish compatibility with every ISP or ExitLag configuration. This is an unsigned test candidate, not a trusted signed release.
 
-### Downloads
-
-- `DiscordBridge_4_6_Stable.exe`: self-contained Windows 10/11 x64 application.
-- `DiscordBridge_4_6_Windows.zip`: executable, usage instructions and licenses.
-- `DiscordBridge_4_6_KaynakKod.zip`: full app source plus corresponding third-party source archives.
-- `SHA256SUMS.txt`: integrity checksums.
-
-### Validation and scope
-
-Publication is gated on Linux and Windows state tests, native Windows repaint/resource/control checks, engine provenance verification and a Windows build. The associated Actions run records the results and Windows UI capture. ISP-specific Superonline/ExitLag connectivity is not exercised on a GitHub runner, so this initial public version is marked **pre-release**.
-
-The application is unsigned; no SignPath approval or Authenticode signature is claimed. The `Stable` filename is retained from the local repaint-fix build. GoodbyeDPI 0.2.3rc3 and WinDivert retain their original licenses; their source archives and notices are included.
-
-## Code signing policy
-
-Signing preparation is documented in [Code signing policy](docs/CODE_SIGNING_POLICY.md) and [Privacy policy](docs/PRIVACY.md). A SignPath Foundation eligibility review is being prepared; no submission or approval is claimed. Existing release files remain unsigned.
+[Usage and limitations](https://github.com/buzer-co/DiscordBridge/blob/main/README.tr.md) · [Privacy policy](https://github.com/buzer-co/DiscordBridge/blob/main/docs/PRIVACY.md) · [Signing policy](https://github.com/buzer-co/DiscordBridge/blob/main/docs/CODE_SIGNING_POLICY.md)

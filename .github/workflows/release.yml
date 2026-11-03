@@ -50,11 +50,11 @@ jobs:
           if-no-files-found: warn
       - run: python scripts/verify_engine.py
       - name: Build standalone Windows executable
-        run: python build.py dist/DiscordBridge_4_6_Stable.exe
+        run: python build.py dist/DiscordBridge_4_7_Stable.exe
       - name: Verify executable metadata and payload
         run: |
-          ./scripts/verify_metadata.ps1 -Path dist/DiscordBridge_4_6_Stable.exe
-          python scripts/verify_payload.py dist/DiscordBridge_4_6_Stable.exe
+          ./scripts/verify_metadata.ps1 -Path dist/DiscordBridge_4_7_Stable.exe
+          python scripts/verify_payload.py dist/DiscordBridge_4_7_Stable.exe
       - name: Package and verify release assets
         run: python scripts/package_release.py
       - name: Save Windows build
@@ -63,9 +63,9 @@ jobs:
           name: DiscordBridge-Windows
           path: dist/*
           if-no-files-found: error
-      - name: Publish v4.6.0
+      - name: Publish v4.7.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release:')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release create v4.6.0 dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Discord Bridge 4.6.0 — Soft UI & repaint fix" --prerelease --notes-file RELEASE_NOTES.md
+        run: gh release create v4.7.0 dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Discord Bridge 4.7.0 — Selective encrypted DNS" --prerelease --notes-file RELEASE_NOTES.md

@@ -5,7 +5,7 @@
     <parameter name="version" required="true" />
   </parameters>
   <zip-file>
-    <pe-file path="DiscordBridge_4_6_Stable.exe"
+    <pe-file path="DiscordBridge_4_7_Stable.exe"
              product-name="Discord Bridge"
              product-version="${version}"
              file-version="${version}"

@@ -1,21 +1,34 @@
-# Discord Bridge
+# Discord Bridge 4.7 — selective encrypted DNS
 
-A small native Windows control center for GoodbyeDPI, with a soft Discord-inspired interface, saved connection profiles, DNS backup/restore and a live network graph.
+Start now leaves Windows and router DNS server settings unchanged. The bundled WinDivert bridge handles standard UDP/53 queries only for the five Discord domain families and their subdomains; unrelated queries pass through to their original destination. Selected queries use authenticated DNS over HTTPS (Cloudflare, then Google), with literal bootstrap addresses and normal TLS hostname verification. No hosts-file, NRPT policy, adapter DNS, proxy or routing changes are made by Start. The old explicit DNS button remains optional and requires its own confirmation.
 
-**[Download v4.6.0](https://github.com/buzer-co/DiscordBridge/releases/tag/v4.6.0)** · [Türkçe](README.tr.md) · [Build and test](https://github.com/buzer-co/DiscordBridge/actions)
+Close/X and Keep connection in background leave the app in the tray; Stop or Stop DPI and Exit close the DNS filter. Startup clears the DNS client cache to remove previously poisoned answers. See [Turkish instructions and scope](README.tr.md) and [privacy policy](docs/PRIVACY.md). This implementation handles ordinary UDP DNS, not DNS over TCP, loopback DNS proxies, caller-managed DoH/DoT or IPv6 extension headers. Native Windows tests use deterministic DNS fixtures; ISP-specific connectivity still requires testing on that network.
+
+
+A small native Windows control center for GoodbyeDPI, with a soft Discord-inspired interface, saved connection profiles, visible tool pages, DNS backup/restore and a live network graph.
+
+**[Previous published release v4.6.0 (without the DNS bridge)](https://github.com/buzer-co/DiscordBridge/releases/tag/v4.6.0)** · [Türkçe](README.tr.md) · [Build and test](https://github.com/buzer-co/DiscordBridge/actions)
 
 Windows 10/11, x64. One executable; Go and Python are needed only for building from source. This is an independent project, unaffiliated with Discord or the GoodbyeDPI/WinDivert authors.
 
 ## Use
 
 1. Exit an older Discord Bridge instance through its system tray menu.
-2. Download the Windows ZIP from Releases, extract it, and run `DiscordBridge_4_6_Stable.exe`.
-3. Select **Automatic** or **Superonline + ExitLag**, then click **Start connection**.
+2. Download the Windows ZIP from Releases, extract it, and run `DiscordBridge_4_7_Stable.exe`.
+3. Select **Automatic** or **Balanced**, then click **Start connection**.
 4. Click **Open Discord** when you want to launch Discord.
 
-Closing the window hides it to the system tray. Use the tray menu to exit or stop the engine. Settings and logs are stored under `%LOCALAPPDATA%\DiscordBridge`.
+Closing the window hides it to the system tray. Use the tray menu to exit or stop the engine. Only profile preferences are saved under `%LOCALAPPDATA%\DiscordBridge\settings.json`. Tool output is transient; no session or engine log files are written.
 
-## What's new in 4.6
+## Navigation, profiles and privacy in 4.7
+
+The sidebar opens actual tool pages with visible action buttons, progress and results. Overview is a real navigation button. Tool details are cleared when leaving the page; traffic never repaints a tool page. The dark theme now has clearer selection, softer card outlines and a compact two-row profile grid.
+
+Only the last successful connection profile is saved. The next launch uses automatic mode and tries that method first; an unverified manual selection never overwrites it. No language, engine-path, persistent PID or log history is stored. The old app-owned `session.log` and `goodbyedpi.log` are removed at startup. Engine output is discarded, and a Windows job object manages only this app's child process. Existing explicit DNS restore backups remain available until restored.
+
+The duplicate method has been consolidated; Automatic plus seven distinct methods are available: Balanced, Compatible, Flexible, Combined, Web support, Classic and Fallback. The missing original modes 7, 8 and 1 have been added. Web support restricts UDP/443 traffic and is excluded from fresh automatic discovery unless it was previously saved as successful. Legacy `standard5` settings migrate to the equivalent Balanced method.
+
+## Earlier UI improvements
 
 - Traffic samples repaint only the small network panel. They do not refresh the entire window or main button.
 - Buffered window and button painting, correct rounded-corner backgrounds, and bounded 60-sample history.
@@ -24,7 +37,7 @@ Closing the window hides it to the system tray. Use the tray menu to exit or sto
 - Soft rounded controls, compact profile choices, manual Discord launch and persisted preferences.
 - The dedicated Superonline + ExitLag profile preserves `-5 --native-frag --blacklist discord-domains.txt`. ExitLag settings are left untouched.
 
-The graph measures **all physical-adapter traffic**, not Discord-only traffic. DNS changes are backed up before applying Cloudflare; restore is available in the app.
+The graph measures **all physical-adapter traffic**, not Discord-only traffic. Start does not change adapter DNS. The separate optional manual DNS operation creates a backup first; restore remains available.
 
 ## Release status
 
@@ -37,7 +50,7 @@ The executable is **unsigned**. SignPath approval or Authenticode signing is not
 With Go 1.23+ and Python 3:
 
 ```sh
-python build.py dist/DiscordBridge_4_6_Stable.exe
+python build.py dist/DiscordBridge_4_7_Stable.exe
 python scripts/package_release.py
 ```
 
@@ -57,4 +70,4 @@ Discord Bridge code: [MIT](LICENSE). GoodbyeDPI: Apache-2.0. WinDivert: LGPL-3.0
 
 ## Code signing policy
 
-Signing preparation is documented in [Code signing policy](docs/CODE_SIGNING_POLICY.md) and [Privacy policy](docs/PRIVACY.md). A SignPath Foundation eligibility review is being prepared; no submission or approval is claimed. Existing release files remain unsigned.
+Signing preparation is documented in [Code signing policy](docs/CODE_SIGNING_POLICY.md) and [Privacy policy](docs/PRIVACY.md). The SignPath Foundation application was declined due to insufficient public visibility. No provider approval or signing certificate is claimed. Existing release files remain unsigned.

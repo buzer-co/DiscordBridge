@@ -3,12 +3,15 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 	"unsafe"
 )
 
@@ -82,9 +85,11 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 	if a.mode != "manual" || a.selectedProfile != "special" {
 		t.Fatal("native profile action failed")
 	}
+	a.lastWorkingProfile = "special"
+	a.saveConfig()
 	other := &app{dataDir: a.dataDir}
 	other.loadConfig()
-	if other.mode != "manual" || other.selectedProfile != "special" {
+	if other.mode != "auto" || other.lastWorkingProfile != "special" {
 		t.Fatal("profile not persisted")
 	}
 	call(procSendMessage, a.hwnd, wmCommand, idLanguage, 0)
@@ -94,6 +99,69 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 	call(procSendMessage, a.hwnd, wmCommand, idLanguage, 0)
 	call(testRedrawWindow, a.hwnd, 0, 0, 0x181)
 	saveNativeScreenshot(t, a)
+	for _, id := range []int{idDNS, idRestore, idTest, idOpenLog, idPack} {
+		call(procSendMessage, a.hwnd, wmCommand, uintptr(id), 0)
+		if a.page != id || call(procIsWindowVisible, a.logEdit) == 0 || call(procIsWindowVisible, a.buttons[idStart]) != 0 {
+			t.Fatalf("tool %d did not open its visible page", id)
+		}
+		if a.styles[idToolAction].caption == "" {
+			t.Fatal("tool action has no label")
+		}
+		if id == idRestore && a.enabled[idToolAction] {
+			t.Fatal("restore enabled without a backup")
+		}
+		call(testRedrawWindow, a.hwnd, 0, 0, 0x181)
+		saveNativeScreenshot(t, a, fmt.Sprintf("windows-tool-%d.png", id))
+	}
+	// A test executable has no embedded payload: the actual Verify action must
+	// finish visibly with an error rather than silently writing a hidden log.
+	call(procSendMessage, a.hwnd, wmCommand, idToolAction, 0)
+	deadline := time.Now().Add(3 * time.Second)
+	for a.busy && time.Now().Before(deadline) {
+		a.update()
+		time.Sleep(10 * time.Millisecond)
+	}
+	a.update()
+	if a.busy || a.toolResult(idPack).state != "error" || a.toolResult(idPack).message == "" {
+		t.Fatal("tool failure was not surfaced")
+	}
+	call(testRedrawWindow, a.hwnd, 0, 0, 0x181)
+	saveNativeScreenshot(t, a, "windows-tool-result.png")
+	call(procSendMessage, a.hwnd, wmCommand, idOverview, 0)
+	if a.page != 0 || call(procIsWindowVisible, a.buttons[idStart]) == 0 || call(procIsWindowVisible, a.logEdit) != 0 {
+		t.Fatal("overview navigation failed")
+	}
+	if call(user32.NewProc("GetWindowTextLengthW"), a.logEdit) != 0 {
+		t.Fatal("hidden result field retained text")
+	}
+	for _, id := range []int{idProfile7, idProfile8} {
+		call(procSendMessage, a.hwnd, wmCommand, uintptr(id), 0)
+		if a.selectedProfile != profileIDs[profileIndex(id)] {
+			t.Fatal("new profile selection failed")
+		}
+	}
+	a.mode = "auto"
+	a.lastWorkingProfile = "alt7"
+	a.saveConfig()
+	reloaded := &app{dataDir: a.dataDir}
+	reloaded.loadConfig()
+	if reloaded.lastWorkingProfile != "alt7" || reloaded.profilePlan()[0].id != "alt7" {
+		t.Fatal("last successful profile was not preferred")
+	}
+	raw, err := os.ReadFile(filepath.Join(a.dataDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if json.Unmarshal(raw, &settings) != nil || len(settings) != 1 {
+		t.Fatal("settings contain more than profile preferences")
+	}
+	a.logLine("Transient result only")
+	for _, name := range []string{"session.log", "goodbyedpi.log", "process.json"} {
+		if _, err := os.Stat(filepath.Join(a.dataDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("unexpected persistent record %s", name)
+		}
+	}
 	if !a.addTray() {
 		t.Log("notification area unavailable on this CI desktop")
 	} else {
@@ -109,7 +177,7 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 	t.Logf("Native Windows paint: 1000-event burst, 250 redraws; GDI objects %d -> %d; profiles/language/tray checked", before, after)
 }
 
-func saveNativeScreenshot(t *testing.T, ap *app) {
+func saveNativeScreenshot(t *testing.T, ap *app, names ...string) {
 	if os.Getenv("CI") == "" {
 		return
 	}
@@ -147,7 +215,11 @@ func saveNativeScreenshot(t *testing.T, ap *app) {
 	if err := os.MkdirAll("test-results", 0755); err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Create(filepath.Join("test-results", "windows-ui.png"))
+	name := "windows-ui.png"
+	if len(names) > 0 {
+		name = names[0]
+	}
+	f, err := os.Create(filepath.Join("test-results", name))
 	if err != nil {
 		t.Fatal(err)
 	}
