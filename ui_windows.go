@@ -58,7 +58,7 @@ func (ap *app) paintBuffered(h uintptr, dirty rect) {
 	}
 	// The buffer retains the static artwork. Traffic paints only this panel.
 	physicalNetwork := ap.scaledRect(networkRect)
-	if !fresh && dirty.left >= physicalNetwork.left && dirty.top >= physicalNetwork.top && dirty.right <= physicalNetwork.right && dirty.bottom <= physicalNetwork.bottom {
+	if ap.page == 0 && !fresh && dirty.left >= physicalNetwork.left && dirty.top >= physicalNetwork.top && dirty.right <= physicalNetwork.right && dirty.bottom <= physicalNetwork.bottom {
 		ap.paintNetwork(ap.bufferDC)
 	} else {
 		ap.paint(ap.bufferDC)
@@ -75,6 +75,7 @@ func (ap *app) paint(hdc uintptr) {
 	}
 	call(procFillRect, hdc, uintptr(unsafe.Pointer(&r)), ap.brushBG)
 	fillRound(hdc, rect{0, 0, 210, r.bottom}, sidebar, 0)
+	fillRound(hdc, rect{209, 20, 210, 690}, edge, 0)
 	softCircle(hdc, 22, 26, 46, primary, 255)
 	if ap.trayIcon != 0 {
 		call(procDrawIconEx, hdc, 30, 34, ap.trayIcon, 30, 30, 0, 0, 3)
@@ -82,10 +83,6 @@ func (ap *app) paint(hdc uintptr) {
 	drawText(hdc, "Discord", 80, 25, 112, 29, white, ap.fHeading, dtSingleLine)
 	drawText(hdc, "BRIDGE", 81, 55, 114, 18, color(161, 166, 190), ap.fTiny, dtSingleLine)
 	drawText(hdc, ap.L("BAĞLANTI ALANIN", "YOUR WORKSPACE"), 24, 111, 180, 20, muted, ap.fTiny, dtSingleLine)
-	fillRound(hdc, rect{14, 145, 196, 191}, surface, 18)
-	fillRound(hdc, rect{14, 157, 18, 179}, color(171, 179, 255), 4)
-	softCircle(hdc, 30, 161, 13, primary, 255)
-	drawText(hdc, ap.L("Genel Bakış", "Overview"), 55, 153, 135, 28, white, ap.fText, dtSingleLine|dtVCenter)
 	drawText(hdc, ap.L("Her şey tek bir yerde.", "Everything in one place."), 24, 207, 176, 22, muted, ap.fSmall, dtSingleLine)
 	drawText(hdc, ap.L("ARAÇLAR", "QUICK TOOLS"), 24, 266, 178, 20, muted, ap.fTiny, dtSingleLine)
 	drawText(hdc, ap.L("DİL / LANGUAGE", "LANGUAGE / DİL"), 24, 551, 180, 20, muted, ap.fTiny, dtSingleLine)
@@ -93,8 +90,10 @@ func (ap *app) paint(hdc uintptr) {
 	drawText(hdc, "ExitLag", 43, 638, 155, 23, grey, ap.fSmall, dtSingleLine)
 	drawText(hdc, ap.L("Ayarların korunur", "Settings stay yours"), 43, 663, 155, 19, muted, ap.fTiny, dtSingleLine)
 
-	drawText(hdc, ap.L("Bağlantı Merkezi", "Connection hub"), 240, 23, 610, 40, white, ap.fTitle, dtSingleLine)
-	drawText(hdc, ap.L("Bağlan, Discord'u aç, keyfine bak.", "Connect, open Discord, make yourself at home."), 242, 68, 640, 24, grey, ap.fSmall, dtSingleLine)
+	if ap.page == 0 {
+		drawText(hdc, ap.L("Bağlantı Merkezi", "Connection hub"), 240, 23, 610, 40, white, ap.fTitle, dtSingleLine)
+		drawText(hdc, ap.L("Bağlan, Discord'u aç, keyfine bak.", "Connect, open Discord, make yourself at home."), 242, 68, 640, 24, grey, ap.fSmall, dtSingleLine)
+	}
 	status, accent := ap.L("Beklemede", "Standby"), muted
 	if ap.busy {
 		status, accent = ap.L("İşlem sürüyor", "Working"), amber
@@ -107,12 +106,17 @@ func (ap *app) paint(hdc uintptr) {
 	softCircle(hdc, 913, 44, 8, accent, 255)
 	drawText(hdc, status, 932, 34, 111, 27, grey, ap.fSmall, dtSingleLine|dtVCenter)
 
-	heroRect := rect{240, 108, 1054, 262}
-	fillRound(hdc, heroRect, hero, 38)
+	if ap.page != 0 {
+		ap.paintToolPage(hdc)
+		return
+	}
+	heroRect := rect{240, 108, 1054, 242}
+	fillRound(hdc, heroRect, hero, 32)
+	outlineRound(hdc, rect{241, 109, 1053, 241}, color(119, 130, 198), 16, 70)
 	// Low contrast circles add depth while leaving the text area quiet.
-	softCircle(hdc, 896, 121, 123, primary, 24)
-	softCircle(hdc, 925, 150, 65, primary, 48)
-	softCircle(hdc, 947, 172, 21, color(181, 188, 255), 150)
+	softCircle(hdc, 901, 117, 112, primary, 24)
+	softCircle(hdc, 925, 142, 65, primary, 48)
+	softCircle(hdc, 947, 164, 21, color(181, 188, 255), 150)
 	label := ap.L("SEN HAZIRSAN, BİZ DE HAZIRIZ", "READY WHEN YOU ARE")
 	heading := ap.L("Sohbete bir adım kaldı.", "One step closer to your people.")
 	body := ap.L("Profilini seç veya gerisini otomatik bağlantıya bırak.", "Choose a profile, or let automatic discovery take care of it.")
@@ -135,13 +139,13 @@ func (ap *app) paint(hdc uintptr) {
 		heading = ap.L("Bağlantıyı tekrar deneyelim.", "Let's try connecting again.")
 		body = ap.L("Başka bir profil seçebilir, işlem günlüğünü inceleyebilirsin.", "Try another profile or check the activity log.")
 	}
-	drawText(hdc, label, 265, 127, 620, 22, color(181, 188, 228), ap.fTiny, dtSingleLine)
-	drawText(hdc, heading, 264, 158, 640, 40, white, ap.fHero, dtSingleLine)
-	drawText(hdc, body, 266, 204, 640, 24, grey, ap.fSmall, dtSingleLine)
-	drawText(hdc, footer, 266, 235, 660, 20, color(162, 169, 198), ap.fTiny, dtSingleLine)
+	drawText(hdc, label, 265, 123, 620, 22, color(181, 188, 228), ap.fTiny, dtSingleLine)
+	drawText(hdc, heading, 264, 149, 640, 40, white, ap.fHero, dtSingleLine)
+	drawText(hdc, body, 266, 190, 640, 24, grey, ap.fSmall, dtSingleLine)
+	drawText(hdc, footer, 266, 218, 660, 20, color(162, 169, 198), ap.fTiny, dtSingleLine)
 
-	drawText(hdc, ap.L("Sana uygun bağlantı", "Your connection, your way"), 241, 357, 600, 30, white, ap.fHeading, dtSingleLine)
-	drawText(hdc, ap.L("Bir profil seç. Seçimin bir sonraki açılışta da burada.", "Pick a profile. Your choice will be here next time."), 242, 390, 730, 22, muted, ap.fSmall, dtSingleLine)
+	drawText(hdc, ap.L("Sana uygun bağlantı", "Your connection, your way"), 241, 333, 600, 30, white, ap.fHeading, dtSingleLine)
+	drawText(hdc, ap.L("Bir profil seç. Seçimin bir sonraki açılışta da burada.", "Pick a profile. Your choice will be here next time."), 242, 366, 730, 22, muted, ap.fSmall, dtSingleLine)
 	ap.paintNetwork(hdc)
 }
 
@@ -149,16 +153,16 @@ func (ap *app) paintNetwork(hdc uintptr) {
 	// Clear the complete dirty rectangle first, including the rounded corners.
 	call(procFillRect, hdc, uintptr(unsafe.Pointer(&networkRect)), ap.brushBG)
 	fillRound(hdc, networkRect, card, 28)
-	drawText(hdc, ap.L("Ağ aktivitesi", "Network activity"), 261, 579, 270, 26, white, ap.fHeading, dtSingleLine)
+	drawText(hdc, ap.L("Ağ aktivitesi", "Network activity"), 261, 592, 270, 26, white, ap.fHeading, dtSingleLine)
 	if ap.trafficAvailable && len(ap.trafficRX) > 0 {
 		i := len(ap.trafficRX) - 1
-		drawText(hdc, fmt.Sprintf("↓ %.1f KB/s", ap.trafficRX[i]), 262, 619, 150, 26, color(108, 221, 185), ap.fText, dtSingleLine)
-		drawText(hdc, fmt.Sprintf("↑ %.1f KB/s", ap.trafficTX[i]), 415, 619, 140, 26, color(171, 177, 255), ap.fText, dtSingleLine)
+		drawText(hdc, fmt.Sprintf("↓ %.1f KB/s", ap.trafficRX[i]), 262, 628, 150, 26, color(108, 221, 185), ap.fText, dtSingleLine)
+		drawText(hdc, fmt.Sprintf("↑ %.1f KB/s", ap.trafficTX[i]), 415, 628, 140, 26, color(171, 177, 255), ap.fText, dtSingleLine)
 	} else {
-		drawText(hdc, ap.L("Ağ verisi bekleniyor...", "Waiting for network data..."), 263, 619, 291, 25, grey, ap.fSmall, dtSingleLine)
+		drawText(hdc, ap.L("Ağ verisi bekleniyor...", "Waiting for network data..."), 263, 628, 291, 25, grey, ap.fSmall, dtSingleLine)
 	}
-	drawText(hdc, ap.L("Tüm fiziksel ağ trafiği · son 60 sn", "All physical traffic · last 60 sec"), 263, 658, 360, 18, muted, ap.fTiny, dtSingleLine)
-	drawNetworkChart(hdc, ap.trafficRX, ap.trafficTX, 578, 587, 451, 76)
+	drawText(hdc, ap.L("Tüm fiziksel ağ trafiği · son 60 sn", "All physical traffic · last 60 sec"), 263, 661, 360, 18, muted, ap.fTiny, dtSingleLine)
+	drawNetworkChart(hdc, ap.trafficRX, ap.trafficTX, 578, 599, 451, 65)
 }
 
 func (ap *app) paintButton(di *drawItem) {
@@ -200,7 +204,7 @@ func (ap *app) drawButton(di *drawItem) {
 	r := di.rc
 	w, h := r.right-r.left, r.bottom-r.top
 	parentBrush := ap.brushBG
-	if id != idStart && id != idOpenDiscord && (id < idProfileAuto || id > idProfile2) {
+	if id != idStart && id != idOpenDiscord && id != idToolAction && id != idToolSecondary && id != idToolBack && profileIndex(id) < 0 {
 		parentBrush = ap.brushSidebar
 	}
 	call(procFillRect, di.hdc, uintptr(unsafe.Pointer(&r)), parentBrush)
@@ -211,7 +215,7 @@ func (ap *app) drawButton(di *drawItem) {
 	if disabled {
 		fg = muted
 	}
-	if id == idStart || id == idOpenDiscord {
+	if id == idStart || id == idOpenDiscord || id == idToolAction || id == idToolSecondary || id == idToolBack {
 		c := s.fill
 		if hovered {
 			c = brighten(c, 13)
@@ -226,6 +230,9 @@ func (ap *app) drawButton(di *drawItem) {
 		// Quiet circular icon, kept within the button's actual bounds.
 		translucentRound(di.hdc, rect{13, 10, 47, h - 10}, white, 12, 22)
 		icon := "→"
+		if id == idToolBack {
+			icon = "‹"
+		}
 		if id == idStart {
 			icon = "+"
 			if ap.connected || ap.running {
@@ -237,8 +244,8 @@ func (ap *app) drawButton(di *drawItem) {
 		}
 		drawText(di.hdc, icon, 17, 5, 27, h-10, fg, ap.fHeading, dtCenter|dtVCenter|dtSingleLine)
 		drawText(di.hdc, s.caption, 61, 0, w-78, h, fg, ap.fBtn, dtVCenter|dtSingleLine)
-	} else if id >= idProfileAuto && id <= idProfile2 {
-		idx := id - idProfileAuto
+	} else if profileIndex(id) >= 0 {
+		idx := profileIndex(id)
 		selected := (ap.mode == "auto" && idx == 0) || (ap.mode == "manual" && idx > 0 && ap.selectedProfile == profileIDs[idx])
 		c := surface
 		if selected {
@@ -266,9 +273,12 @@ func (ap *app) drawButton(di *drawItem) {
 			drawText(di.hdc, s.caption, 44, 9, w-57, 25, fg, ap.fText, dtSingleLine|dtVCenter)
 			desc := ap.L("Çalışan profili bulur ve hatırlar", "Finds and remembers a working profile")
 			if idx == 1 {
-				desc = ap.L("Özel profil · öncelikli bağlantı", "Special profile · preferred connection")
+				desc = ap.L("Son çalışan: ", "Last working: ") + ap.profileName(ap.lastWorkingProfile)
+				if ap.lastWorkingProfile == "" {
+					desc = ap.L("İlk bağlantı için önerilen yöntem", "Suggested starting point")
+				}
 			}
-			drawText(di.hdc, desc, 44, 37, w-57, 20, color(170, 176, 197), ap.fTiny, dtSingleLine)
+			drawText(di.hdc, desc, 44, 32, w-57, 20, color(170, 176, 197), ap.fTiny, dtSingleLine)
 		} else {
 			drawText(di.hdc, s.caption, 40, 0, w-47, h, fg, ap.fSmall, dtSingleLine|dtVCenter)
 		}
@@ -283,7 +293,15 @@ func (ap *app) drawButton(di *drawItem) {
 		if id == idLanguage {
 			c = card
 		}
+		selected := (id == idOverview && ap.page == 0) || (id == ap.page && ap.page != 0)
+		if selected {
+			c = selectedBG
+		}
+
 		fillRound(di.hdc, r, c, 20)
+		if selected {
+			fillRound(di.hdc, rect{0, 10, 4, h - 10}, color(171, 179, 255), 4)
+		}
 		if id == idLanguage {
 			drawText(di.hdc, s.caption, 4, 0, w-8, h, grey, ap.fSmall, dtSingleLine|dtCenter|dtVCenter)
 		} else {
@@ -294,8 +312,13 @@ func (ap *app) drawButton(di *drawItem) {
 			if disabled {
 				fg = muted
 			}
-			icons := map[int]string{idDNS: "◎", idRestore: "↶", idTest: "~", idOpenLog: "≡", idPack: "◇"}
-			drawText(di.hdc, icons[id], 10, 0, 23, h, muted, ap.fHeading, dtCenter|dtVCenter|dtSingleLine)
+			icons := map[int]string{idOverview: "•", idDNS: "◎", idRestore: "↶", idTest: "~", idOpenLog: "≡", idPack: "◇"}
+			iconColor := muted
+			if selected {
+				fg = white
+				iconColor = color(177, 186, 255)
+			}
+			drawText(di.hdc, icons[id], 10, 0, 23, h, iconColor, ap.fHeading, dtCenter|dtVCenter|dtSingleLine)
 			drawText(di.hdc, s.caption, 42, 0, w-46, h, fg, ap.fSmall, dtSingleLine|dtVCenter)
 		}
 	}

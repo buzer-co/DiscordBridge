@@ -5,7 +5,7 @@ Start now leaves Windows and router DNS server settings unchanged. The bundled W
 Close/X and Keep connection in background leave the app in the tray; Stop or Stop DPI and Exit close the DNS filter. Startup clears the DNS client cache to remove previously poisoned answers. See [Turkish instructions and scope](README.tr.md) and [privacy policy](docs/PRIVACY.md). This implementation handles ordinary UDP DNS, not DNS over TCP, loopback DNS proxies, caller-managed DoH/DoT or IPv6 extension headers. Native Windows tests use deterministic DNS fixtures; ISP-specific connectivity still requires testing on that network.
 
 
-A small native Windows control center for GoodbyeDPI, with a soft Discord-inspired interface, saved connection profiles, DNS backup/restore and a live network graph.
+A small native Windows control center for GoodbyeDPI, with a soft Discord-inspired interface, saved connection profiles, visible tool pages, DNS backup/restore and a live network graph.
 
 **[Previous published release v4.6.0 (without the DNS bridge)](https://github.com/buzer-co/DiscordBridge/releases/tag/v4.6.0)** · [Türkçe](README.tr.md) · [Build and test](https://github.com/buzer-co/DiscordBridge/actions)
 
@@ -15,12 +15,20 @@ Windows 10/11, x64. One executable; Go and Python are needed only for building f
 
 1. Exit an older Discord Bridge instance through its system tray menu.
 2. Download the Windows ZIP from Releases, extract it, and run `DiscordBridge_4_7_Stable.exe`.
-3. Select **Automatic** or **Superonline + ExitLag**, then click **Start connection**.
+3. Select **Automatic** or **Balanced**, then click **Start connection**.
 4. Click **Open Discord** when you want to launch Discord.
 
-Closing the window hides it to the system tray. Use the tray menu to exit or stop the engine. Settings and logs are stored under `%LOCALAPPDATA%\DiscordBridge`.
+Closing the window hides it to the system tray. Use the tray menu to exit or stop the engine. Only profile preferences are saved under `%LOCALAPPDATA%\DiscordBridge\settings.json`. Tool output is transient; no session or engine log files are written.
 
-## What's new in 4.6
+## Navigation, profiles and privacy in 4.7
+
+The sidebar opens actual tool pages with visible action buttons, progress and results. Overview is a real navigation button. Tool details are cleared when leaving the page; traffic never repaints a tool page. The dark theme now has clearer selection, softer card outlines and a compact two-row profile grid.
+
+Only connection mode, selected profile and last successful profile are saved. No language, engine-path, persistent PID or log history is stored. The old app-owned `session.log` and `goodbyedpi.log` are removed at startup. Engine output is discarded, and a Windows job object manages only this app's child process. Existing explicit DNS restore backups remain available until restored.
+
+The duplicate method has been consolidated; Automatic plus seven distinct methods are available: Balanced, Compatible, Flexible, Combined, Web support, Classic and Fallback. The missing original modes 7, 8 and 1 have been added. Web support restricts UDP/443 traffic and is excluded from fresh automatic discovery unless it was previously saved as successful. Legacy `standard5` settings migrate to the equivalent Balanced method.
+
+## Earlier UI improvements
 
 - Traffic samples repaint only the small network panel. They do not refresh the entire window or main button.
 - Buffered window and button painting, correct rounded-corner backgrounds, and bounded 60-sample history.
