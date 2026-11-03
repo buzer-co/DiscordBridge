@@ -146,7 +146,9 @@ func (ap *app) renderToolLog() {
 	}
 	call(procSetWindowText, ap.logEdit, uintptr(unsafe.Pointer(ptr(text))))
 	call(procSendMessage, ap.logEdit, emSetSel, uintptr(^uint32(0)), uintptr(^uint32(0)))
-	call(procSendMessage, ap.logEdit, 0x00B7, 0, 0) // EM_SCROLLCARET
+	call(procSendMessage, ap.logEdit, 0x00B7, 0, 0)                 // EM_SCROLLCARET
+	linesVisible := call(procSendMessage, ap.logEdit, 0x00BA, 0, 0) // EM_GETLINECOUNT
+	call(user32.NewProc("ShowScrollBar"), ap.logEdit, 1, boolean(linesVisible > 8))
 }
 
 func (ap *app) appendToolLog(line string) {

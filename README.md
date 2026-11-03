@@ -24,7 +24,7 @@ Closing the window hides it to the system tray. Use the tray menu to exit or sto
 
 The sidebar opens actual tool pages with visible action buttons, progress and results. Overview is a real navigation button. Tool details are cleared when leaving the page; traffic never repaints a tool page. The dark theme now has clearer selection, softer card outlines and a compact two-row profile grid.
 
-Only connection mode, selected profile and last successful profile are saved. No language, engine-path, persistent PID or log history is stored. The old app-owned `session.log` and `goodbyedpi.log` are removed at startup. Engine output is discarded, and a Windows job object manages only this app's child process. Existing explicit DNS restore backups remain available until restored.
+Only the last successful connection profile is saved. The next launch uses automatic mode and tries that method first; an unverified manual selection never overwrites it. No language, engine-path, persistent PID or log history is stored. The old app-owned `session.log` and `goodbyedpi.log` are removed at startup. Engine output is discarded, and a Windows job object manages only this app's child process. Existing explicit DNS restore backups remain available until restored.
 
 The duplicate method has been consolidated; Automatic plus seven distinct methods are available: Balanced, Compatible, Flexible, Combined, Web support, Classic and Fallback. The missing original modes 7, 8 and 1 have been added. Web support restricts UDP/443 traffic and is excluded from fresh automatic discovery unless it was previously saved as successful. Legacy `standard5` settings migrate to the equivalent Balanced method.
 

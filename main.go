@@ -307,10 +307,9 @@ type style struct {
 	fg      uint32
 }
 type config struct {
-	Mode               string `json:"mode"`
-	SelectedProfile    string `json:"selected_profile"`
 	LastWorkingProfile string `json:"last_working_profile"`
 }
+
 type processInfo struct {
 	PID     int    `json:"pid"`
 	Path    string `json:"path"`
@@ -774,7 +773,7 @@ func (ap *app) selectProfile(id string) {
 		ap.selectedProfile = id
 	}
 	ap.saveConfig()
-	ap.logLine(ap.L("Profil seçimi kaydedildi: ", "Profile selection saved: ") + ap.profileName(id))
+	ap.logLine(ap.L("Profil seçildi: ", "Profile selected: ") + ap.profileName(id))
 	ap.invalidate(nil)
 	for _, n := range profileButtonIDs {
 		if h := ap.buttons[n]; h != 0 {
@@ -1170,33 +1169,30 @@ func findGoodbyeDPI(root string) string {
 	return ""
 }
 func (ap *app) saveConfig() {
-	data, _ := json.MarshalIndent(config{Mode: ap.mode, SelectedProfile: ap.selectedProfile, LastWorkingProfile: ap.lastWorkingProfile}, "", "  ")
+	data, _ := json.MarshalIndent(config{LastWorkingProfile: ap.lastWorkingProfile}, "", "  ")
 	_ = os.WriteFile(filepath.Join(ap.dataDir, "settings.json"), data, 0600)
 }
 func (ap *app) loadConfig() {
+	ap.mode = "auto"
+	ap.selectedProfile = "special"
 	data, err := os.ReadFile(filepath.Join(ap.dataDir, "settings.json"))
-	if err == nil {
-		var c config
-		if json.Unmarshal(data, &c) == nil {
-			if c.SelectedProfile == "standard5" {
-				c.SelectedProfile = "special"
-			}
-			if c.LastWorkingProfile == "standard5" {
-				c.LastWorkingProfile = "special"
-			}
-			if c.Mode == "manual" || c.Mode == "auto" {
-				ap.mode = c.Mode
-			}
-			if profileValid(c.SelectedProfile) {
-				ap.selectedProfile = c.SelectedProfile
-			}
-			if profileValid(c.LastWorkingProfile) {
-				ap.lastWorkingProfile = c.LastWorkingProfile
-			}
-			ap.saveConfig() // Rewrite legacy settings with profile fields only.
-		}
+	if err != nil {
+		return
 	}
+	var c config
+	if json.Unmarshal(data, &c) != nil {
+		return
+	}
+	if c.LastWorkingProfile == "standard5" {
+		c.LastWorkingProfile = "special"
+	}
+	if profileValid(c.LastWorkingProfile) {
+		ap.lastWorkingProfile = c.LastWorkingProfile
+		ap.selectedProfile = c.LastWorkingProfile
+	}
+	ap.saveConfig() // Strip old language, path and unverified selection fields.
 }
+
 func powershell(script string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

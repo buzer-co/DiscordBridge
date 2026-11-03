@@ -85,9 +85,11 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 	if a.mode != "manual" || a.selectedProfile != "special" {
 		t.Fatal("native profile action failed")
 	}
+	a.lastWorkingProfile = "special"
+	a.saveConfig()
 	other := &app{dataDir: a.dataDir}
 	other.loadConfig()
-	if other.mode != "manual" || other.selectedProfile != "special" {
+	if other.mode != "auto" || other.lastWorkingProfile != "special" {
 		t.Fatal("profile not persisted")
 	}
 	call(procSendMessage, a.hwnd, wmCommand, idLanguage, 0)
@@ -151,7 +153,7 @@ func TestNativeWindowRepaintAndResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	var settings map[string]any
-	if json.Unmarshal(raw, &settings) != nil || len(settings) != 3 {
+	if json.Unmarshal(raw, &settings) != nil || len(settings) != 1 {
 		t.Fatal("settings contain more than profile preferences")
 	}
 	a.logLine("Transient result only")

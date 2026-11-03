@@ -145,7 +145,7 @@ func (ap *app) paint(hdc uintptr) {
 	drawText(hdc, footer, 266, 218, 660, 20, color(162, 169, 198), ap.fTiny, dtSingleLine)
 
 	drawText(hdc, ap.L("Sana uygun bağlantı", "Your connection, your way"), 241, 333, 600, 30, white, ap.fHeading, dtSingleLine)
-	drawText(hdc, ap.L("Bir profil seç. Seçimin bir sonraki açılışta da burada.", "Pick a profile. Your choice will be here next time."), 242, 366, 730, 22, muted, ap.fSmall, dtSingleLine)
+	drawText(hdc, ap.L("Bir yöntem seç. Son çalışan bağlantı sonraki açılışta hatırlanır.", "Choose a method. The last successful connection is remembered."), 242, 366, 730, 22, muted, ap.fSmall, dtSingleLine)
 	ap.paintNetwork(hdc)
 }
 
@@ -272,12 +272,13 @@ func (ap *app) drawButton(di *drawItem) {
 		if idx < 2 {
 			drawText(di.hdc, s.caption, 44, 9, w-57, 25, fg, ap.fText, dtSingleLine|dtVCenter)
 			desc := ap.L("Çalışan profili bulur ve hatırlar", "Finds and remembers a working profile")
-			if idx == 1 {
+			if ap.lastWorkingProfile != "" {
 				desc = ap.L("Son çalışan: ", "Last working: ") + ap.profileName(ap.lastWorkingProfile)
-				if ap.lastWorkingProfile == "" {
-					desc = ap.L("İlk bağlantı için önerilen yöntem", "Suggested starting point")
-				}
 			}
+			if idx == 1 {
+				desc = ap.L("Önerilen başlangıç yöntemi", "Suggested starting point")
+			}
+
 			drawText(di.hdc, desc, 44, 32, w-57, 20, color(170, 176, 197), ap.fTiny, dtSingleLine)
 		} else {
 			drawText(di.hdc, s.caption, 40, 0, w-47, h, fg, ap.fSmall, dtSingleLine|dtVCenter)

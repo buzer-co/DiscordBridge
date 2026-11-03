@@ -9,14 +9,14 @@ Windows 10/11 x64 için tek EXE. GoodbyeDPI / WinDivert motoru programın içind
 3. Otomatik veya Dengeli profilini seçip Bağlantıyı Başlat'a basın.
 4. Discord'u Aç düğmesiyle Discord'u açın.
 
-X düğmesi programı sistem tepsisine gizler. Çıkmak için tepsi menüsünü kullanın. Yalnızca profil seçimi ve son çalışan profil `%LOCALAPPDATA%\DiscordBridge\settings.json` içinde saklanır. İşlem sonuçları ekranda geçicidir; günlük dosyası yazılmaz.
+X düğmesi programı sistem tepsisine gizler. Çıkmak için tepsi menüsünü kullanın. Yalnızca son çalışan profil `%LOCALAPPDATA%\DiscordBridge\settings.json` içinde saklanır. İşlem sonuçları ekranda geçicidir; günlük dosyası yazılmaz.
 
 ## 4.7 arayüz ve gizlilik
 
 - Sol menü gerçek sayfalar açar: DNS merkezi, geri yükleme, bağlantı kontrolü, işlem durumu ve motor kontrolü. Her sayfada işlemi başlatan ayrı düğme, görünür durum ve geçici sonuç alanı bulunur; Genel Bakış düğmesi ana ekrana döndürür.
 - Koyu tema korunur; seçili menü vurgusu, daha dengeli boşluklar, hafif kart kenarları ve düzenli profil kartları eklenmiştir. Trafik değişimi araç sayfalarını yenilemez.
 - `session.log` ve `goodbyedpi.log` yazılmaz. Eski sürümden kalan bu iki uygulama günlüğü açılışta temizlenir. Gizli metin alanında günlük biriktirilmez; sayfa kapanınca ayrıntı alanı temizlenir.
-- Kaydedilen tercihler yalnızca otomatik/elle seçim, seçili profil ve son çalışan profildir. Dil tercihi ve motor dosya yolu saklanmaz. Motorun işlem kimliği dosyaya yazılmaz; yalnızca uygulamanın kendi motoru Windows işlem grubuyla yönetilir.
+- Yalnızca son başarılı bağlantı profili kaydedilir. Sonraki açılışta otomatik mod bu profili önce dener; başarısız bir elle seçim kaydedilmiş çalışan profilin yerini almaz. Dil tercihi ve motor dosya yolu saklanmaz. Motorun işlem kimliği dosyaya yazılmaz; yalnızca uygulamanın kendi motoru Windows işlem grubuyla yönetilir.
 - Yinelenen iki yöntem birleştirildi. Otomatik yanında yedi ayrı yöntem bulunur: Dengeli, Uyumlu, Esnek, Birleşik, Web desteği, Klasik ve Yedek. Eski `standard5` tercihi aynı yöntemi kullanan Dengeli'ye taşınır.
 - Web desteği, UDP/443 (QUIC) trafiğini kısıtlayan bir yöntemdir; ilk otomatik taramada denenmez. Elle seçilebilir; daha önce çalışıp kaydedildiyse sonraki otomatik seçimde tercih edilebilir. Diğer profillerin ve yeni eklenen yöntemlerin her ağda çalışacağı garanti edilmez.
 
